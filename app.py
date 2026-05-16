@@ -66,7 +66,7 @@ def inject_styles():
     }
 
     /* Hide default Streamlit elements */
-    #MainMenu, footer, { visibility: hidden; }
+    #MainMenu, footer, header { visibility: hidden; }
     .block-container { padding-top: 1.5rem; padding-bottom: 2rem; }
 
     /* ── KPI Cards ── */
@@ -436,7 +436,7 @@ def get_sales_df(business_id: str) -> pd.DataFrame:
     df = df[df["business_id"] == business_id].copy()
     if df.empty:
         return df
-    df["created_at"]    = pd.to_datetime(df["created_at"], errors="coerce")
+    df["sale_date"]    = pd.to_datetime(df["sale_date"], errors="coerce")
     df["total_amount"] = pd.to_numeric(df["total_amount"], errors="coerce").fillna(0)
     df["gross_profit"] = pd.to_numeric(df["gross_profit"], errors="coerce").fillna(0)
     df["quantity"]     = pd.to_numeric(df["quantity"],     errors="coerce").fillna(0)
@@ -481,15 +481,15 @@ def compute_kpis(sales_df: pd.DataFrame, expenses_df: pd.DataFrame):
     if sales_df.empty:
         return kpis
 
-    df = sales_df.dropnpd.DataFrame["created_at"])
+    df = sales_df.dropna(subset=["sale_date"])
 
     # Date buckets
-    today_df  = df[df["created_at"].dt.date == today]
-    week_df   = df[df["created_at"] >= (now - timedelta(days=7))]
-    month_df  = df[df["created_at"] >= (now - timedelta(days=30))]
+    today_df  = df[df["sale_date"].dt.date == today]
+    week_df   = df[df["sale_date"] >= (now - timedelta(days=7))]
+    month_df  = df[df["sale_date"] >= (now - timedelta(days=30))]
     prev_week = df[
-        (df["created_at"] >= (now - timedelta(days=14))) &
-        (df["created_at"] <  (now - timedelta(days=7)))
+        (df["sale_date"] >= (now - timedelta(days=14))) &
+        (df["sale_date"] <  (now - timedelta(days=7)))
     ]
 
     kpis["today_revenue"]  = today_df["total_amount"].sum()
@@ -537,7 +537,7 @@ def compute_insights(sales_df, products_df, expenses_df):
     if sales_df.empty:
         return insights
 
-    df = sales_df.dropna(subset=["created_at"]).copy()
+    df = sales_df.dropna(subset=["sale_date"]).copy()
 
     # Top products by revenue
     top_rev = (
@@ -596,7 +596,7 @@ def compute_insights(sales_df, products_df, expenses_df):
         insights["payment_split"] = pm
 
     # Slow movers (products sold less than average in last 30 days)
-    last30 = df[df["created_at"] >= (datetime.now() - timedelta(days=30))]
+    last30 = df[df["sale_date"] >= (datetime.now() - timedelta(days=30))]
     if not last30.empty:
         prod_sales = last30.groupby("product_name")["quantity"].sum().reset_index()
         avg_qty    = prod_sales["quantity"].mean()
@@ -615,7 +615,7 @@ def compute_insights(sales_df, products_df, expenses_df):
         for _, prod in products_df.iterrows():
             prod_sales_df = df[df["product_name"] == prod["product_name"]]
             if not prod_sales_df.empty:
-                days_range  = max((df["created_at"].max() - df["created_at"].min()).days, 1)
+                days_range  = max((df["sale_date"].max() - df["sale_date"].min()).days, 1)
                 avg_per_day = prod_sales_df["quantity"].sum() / days_range
                 if avg_per_day > 0:
                     days_left = prod["stock_quantity"] / avg_per_day
