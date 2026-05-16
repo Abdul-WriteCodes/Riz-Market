@@ -225,14 +225,23 @@ def read_sheet(tab_name: str) -> pd.DataFrame:
 
 
 def append_row(tab_name: str, row: list):
-    """Append a single row to a sheet tab."""
+    """Append a single row to a sheet tab. Validates column count before writing."""
     try:
         ws = get_sheet(tab_name)
+        headers = ws.row_values(1)
+        if headers and len(row) != len(headers):
+            st.error(
+                f"❌ Column mismatch on {tab_name}: "
+                f"sheet has {len(headers)} columns but code is sending {len(row)}. "
+                f"Sheet headers: {headers}. "
+                f"Fix your Google Sheet headers to match exactly."
+            )
+            return False
         ws.append_row(row, value_input_option="USER_ENTERED")
-        st.cache_data.clear()   # flush read cache so next load is fresh
+        st.cache_data.clear()
         return True
     except Exception as e:
-        st.error(f"Error writing to {tab_name}: {e}")
+        st.error(f"❌ Error writing to {tab_name}: {e}")
         return False
 
 
@@ -436,14 +445,24 @@ def get_sales_df(business_id: str) -> pd.DataFrame:
     df = read_sheet(SHEET_SALES)
     if df.empty:
         return pd.DataFrame()
-    df = df[df["business_id"] == business_id].copy()
+
+    # Normalise header: sheet may use "sales_id" or "sale_id" — rename to "sale_id"
+    if "sales_id" in df.columns and "sale_id" not in df.columns:
+        df = df.rename(columns={"sales_id": "sale_id"})
+
+    # business_id column is required — bail clearly if missing
+    if "business_id" not in df.columns:
+        return pd.DataFrame()
+
+    df = df[df["business_id"].astype(str) == str(business_id)].copy()
     if df.empty:
         return df
-    df["sale_date"]    = pd.to_datetime(df["sale_date"], errors="coerce")
-    df["total_amount"] = pd.to_numeric(df["total_amount"], errors="coerce").fillna(0)
-    df["gross_profit"] = pd.to_numeric(df["gross_profit"], errors="coerce").fillna(0)
-    df["quantity"]     = pd.to_numeric(df["quantity"],     errors="coerce").fillna(0)
-    df["cost_total"]   = pd.to_numeric(df["cost_total"],   errors="coerce").fillna(0)
+
+    df["sale_date"]    = pd.to_datetime(df["sale_date"],    errors="coerce")
+    df["total_amount"] = pd.to_numeric(df["total_amount"],  errors="coerce").fillna(0)
+    df["gross_profit"] = pd.to_numeric(df["gross_profit"],  errors="coerce").fillna(0)
+    df["quantity"]     = pd.to_numeric(df["quantity"],      errors="coerce").fillna(0)
+    df["cost_total"]   = pd.to_numeric(df["cost_total"],    errors="coerce").fillna(0)
     return df
 
 
@@ -451,7 +470,11 @@ def get_products_df(business_id: str) -> pd.DataFrame:
     df = read_sheet(SHEET_PRODUCTS)
     if df.empty:
         return pd.DataFrame()
-    df = df[df["business_id"] == business_id].copy()
+    if "business_id" not in df.columns:
+        return pd.DataFrame()
+    df = df[df["business_id"].astype(str) == str(business_id)].copy()
+    if df.empty:
+        return pd.DataFrame()
     df["selling_price"]  = pd.to_numeric(df["selling_price"],  errors="coerce").fillna(0)
     df["cost_price"]     = pd.to_numeric(df["cost_price"],     errors="coerce").fillna(0)
     df["stock_quantity"] = pd.to_numeric(df["stock_quantity"], errors="coerce").fillna(0)
@@ -463,7 +486,11 @@ def get_expenses_df(business_id: str) -> pd.DataFrame:
     df = read_sheet(SHEET_EXPENSES)
     if df.empty:
         return pd.DataFrame()
-    df = df[df["business_id"] == business_id].copy()
+    if "business_id" not in df.columns:
+        return pd.DataFrame()
+    df = df[df["business_id"].astype(str) == str(business_id)].copy()
+    if df.empty:
+        return pd.DataFrame()
     df["amount"]       = pd.to_numeric(df["amount"],       errors="coerce").fillna(0)
     df["expense_date"] = pd.to_datetime(df["expense_date"], errors="coerce")
     return df
@@ -979,6 +1006,21 @@ def page_record_sale():
     business_id = user["business_id"]
 
     page_header("🛒 Record a Sale", "Log a transaction and update inventory automatically")
+
+    # ── Debug panel (remove after confirming sales work) ──
+    with st.expander("🔧 Connection Diagnostics — tap to check if sheet is reachable"):
+        try:
+            ws      = get_sheet(SHEET_SALES)
+            headers = ws.row_values(1)
+            rows    = len(ws.get_all_values()) - 1
+            st.success(f"✅ SALES sheet connected. Headers: {headers}. Data rows: {rows}")
+            st.info(f"Expected 12 headers. Got {len(headers)}.")
+            if len(headers) != 12:
+                st.error("Header count mismatch! Your sheet needs exactly these 12 headers in row 1: "
+                         "sales_id, business_id, product_id, product_name, quantity, unit_price, "
+                         "total_amount, cost_total, gross_profit, payment_method, sale_date, recorded_by")
+        except Exception as e:
+            st.error(f"❌ Cannot reach SALES sheet: {e}")
 
     products_df = get_products_df(business_id)
 
