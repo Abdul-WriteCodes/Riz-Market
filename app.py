@@ -1007,21 +1007,6 @@ def page_record_sale():
 
     page_header("🛒 Record a Sale", "Log a transaction and update inventory automatically")
 
-    # ── Debug panel (remove after confirming sales work) ──
-    with st.expander("🔧 Connection Diagnostics — tap to check if sheet is reachable"):
-        try:
-            ws      = get_sheet(SHEET_SALES)
-            headers = ws.row_values(1)
-            rows    = len(ws.get_all_values()) - 1
-            st.success(f"✅ SALES sheet connected. Headers: {headers}. Data rows: {rows}")
-            st.info(f"Expected 12 headers. Got {len(headers)}.")
-            if len(headers) != 12:
-                st.error("Header count mismatch! Your sheet needs exactly these 12 headers in row 1: "
-                         "sales_id, business_id, product_id, product_name, quantity, unit_price, "
-                         "total_amount, cost_total, gross_profit, payment_method, sale_date, recorded_by")
-        except Exception as e:
-            st.error(f"❌ Cannot reach SALES sheet: {e}")
-
     products_df = get_products_df(business_id)
 
     if products_df.empty:
@@ -1060,8 +1045,8 @@ def page_record_sale():
         # ── Only quantity + submit inside the form ──
         with st.form("record_sale_form", clear_on_submit=True):
             quantity = st.number_input(
-                f"Quantity (max {max_qty})",
-                min_value=1, max_value=max_qty,
+                f"Quantity (max {max_qty} available)",
+                min_value=1,
                 value=1, step=1,
             )
 
