@@ -550,6 +550,7 @@ def signup_user(business_name, full_name, email, password, plan_type):
         status, start, end, now,
         "no",  # password_reset_requested
         "",    # reset_requested_at
+        "no",  # must_change_password
     ]
     success = append_row(SHEET_USERS, row)
     if success:
