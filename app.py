@@ -38,6 +38,7 @@ SHEET_USERS    = "USERS"
 SHEET_PRODUCTS = "PRODUCTS"
 SHEET_SALES    = "SALES"
 SHEET_EXPENSES = "EXPENSES"
+SHEET_PAYMENTS = "PAYMENTS"   # Platform subscription payment ledger (admin)
 
 # Plan pricing & Flutterwave links
 PAYMENT_DETAILS = {
@@ -375,6 +376,45 @@ def delete_row_by_id(tab_name: str, id_col: str, id_val: str) -> bool:
         return False
 
 
+def log_payment(user_id: str, business_name: str, email: str,
+                plan_type: str, amount: float, note: str = ""):
+    """
+    Append a row to the PAYMENTS sheet whenever a subscription is activated
+    or renewed. This is the ground-truth revenue ledger for the platform.
+    Columns: payment_id | user_id | business_name | email |
+             plan_type | amount | payment_date | note
+    """
+    try:
+        row = [
+            gen_id("PAY"),
+            user_id,
+            business_name,
+            email,
+            plan_type,
+            amount,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            note,
+        ]
+        return append_row(SHEET_PAYMENTS, row)
+    except Exception:
+        # Payment logging failure should never block the activation flow
+        return False
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def get_payments_df() -> pd.DataFrame:
+    """Read PAYMENTS sheet. Returns empty DataFrame if sheet doesn't exist yet."""
+    try:
+        df = read_sheet(SHEET_PAYMENTS)
+        if df.empty:
+            return pd.DataFrame()
+        df["amount"]       = pd.to_numeric(df["amount"],       errors="coerce").fillna(0)
+        df["payment_date"] = pd.to_datetime(df["payment_date"], errors="coerce")
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
 # ─────────────────────────────────────────────
 #  UTILITY HELPERS
 # ─────────────────────────────────────────────
@@ -587,6 +627,10 @@ def compute_kpis(sales_df: pd.DataFrame, expenses_df: pd.DataFrame):
         "today_profit":    0, "week_profit":     0, "month_profit":   0,
         "today_txn":       0, "week_txn":        0, "month_txn":      0,
         "week_growth":     0, "month_expenses":  0, "net_profit":     0,
+        # Extended metrics
+        "year_revenue":    0, "year_profit":     0, "year_txn":       0,
+        "alltime_revenue": 0, "alltime_profit":  0, "alltime_txn":    0,
+        "avg_daily_revenue": 0,
     }
 
     if sales_df.empty:
@@ -624,6 +668,24 @@ def compute_kpis(sales_df: pd.DataFrame, expenses_df: pd.DataFrame):
         m_exp = expenses_df[expenses_df["expense_date"] >= (now - timedelta(days=30))]
         kpis["month_expenses"] = m_exp["amount"].sum()
     kpis["net_profit"] = kpis["month_profit"] - kpis["month_expenses"]
+
+    # Year-to-date (current calendar year Jan 1 → now)
+    year_start = datetime(now.year, 1, 1)
+    year_df    = df[df["sale_date"] >= year_start]
+    kpis["year_revenue"] = year_df["total_amount"].sum()
+    kpis["year_profit"]  = year_df["gross_profit"].sum()
+    kpis["year_txn"]     = len(year_df)
+
+    # All-time totals
+    kpis["alltime_revenue"] = df["total_amount"].sum()
+    kpis["alltime_profit"]  = df["gross_profit"].sum()
+    kpis["alltime_txn"]     = len(df)
+
+    # Average daily revenue — total revenue ÷ number of distinct days with sales
+    active_days = df["sale_date"].dt.date.nunique()
+    kpis["avg_daily_revenue"] = (
+        kpis["alltime_revenue"] / active_days if active_days > 0 else 0
+    )
 
     return kpis
 
@@ -1244,6 +1306,34 @@ def page_dashboard():
         kpi_card("Low Stock Alerts", str(low_count),
                  "Products need restocking",
                  positive=(low_count == 0))
+
+    # ── KPI Row 3: Year, All-time, Avg Daily ──
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        kpi_card(
+            f"This Year ({datetime.now().year})",
+            fmt_naira(kpis["year_revenue"]),
+            f"{kpis['year_txn']} transactions YTD",
+        )
+    with c2:
+        kpi_card(
+            "Year Profit",
+            fmt_naira(kpis["year_profit"]),
+            f"Gross profit {datetime.now().year}",
+            positive=(kpis["year_profit"] >= 0),
+        )
+    with c3:
+        kpi_card(
+            "All-Time Revenue",
+            fmt_naira(kpis["alltime_revenue"]),
+            f"{kpis['alltime_txn']} total transactions",
+        )
+    with c4:
+        kpi_card(
+            "Avg. Daily Revenue",
+            fmt_naira(kpis["avg_daily_revenue"]),
+            "Per active trading day",
+        )
 
     # ── Charts ──
     if not sales_df.empty:
@@ -2075,8 +2165,43 @@ def page_admin():
             (users_df["plan_type"] == "yearly") &
             (users_df["plan_status"] == "active")
         ]) * (PAYMENT_DETAILS["yearly_price"] / 12)  # normalise yearly to monthly
-        kpi_card("Est. Monthly Revenue",
+        kpi_card("Est. MRR",
                  fmt_naira(monthly_rev + yearly_rev), "From active paid plans")
+
+    # ── Real revenue KPIs from PAYMENTS ledger ──
+    payments_df = get_payments_df()
+    if not payments_df.empty:
+        now_dt      = datetime.now()
+        month_start = datetime(now_dt.year, now_dt.month, 1)
+        year_start  = datetime(now_dt.year, 1, 1)
+
+        total_collected      = payments_df["amount"].sum()
+        month_collected      = payments_df[
+            payments_df["payment_date"] >= month_start
+        ]["amount"].sum()
+        year_collected       = payments_df[
+            payments_df["payment_date"] >= year_start
+        ]["amount"].sum()
+        total_transactions   = len(payments_df)
+
+        st.markdown("---")
+        st.markdown("#### 💰 Platform Revenue — Actual Collected")
+        r1, r2, r3, r4 = st.columns(4)
+        with r1:
+            kpi_card("All-Time Revenue", fmt_naira(total_collected),
+                     f"{total_transactions} payments received")
+        with r2:
+            kpi_card("This Month", fmt_naira(month_collected),
+                     now_dt.strftime("%B %Y"))
+        with r3:
+            kpi_card("This Year", fmt_naira(year_collected),
+                     str(now_dt.year))
+        with r4:
+            avg_per_payment = total_collected / total_transactions if total_transactions else 0
+            kpi_card("Avg. per Payment", fmt_naira(avg_per_payment),
+                     "Across all activations & renewals")
+    else:
+        st.info("💡 No payment records yet. Revenue will appear here as you activate users.")
 
     st.markdown("---")
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
@@ -2114,6 +2239,14 @@ def page_admin():
                                 }
                             )
                             if ok:
+                                pay_amount = (PAYMENT_DETAILS["yearly_price"]
+                                              if plan == "yearly"
+                                              else PAYMENT_DETAILS["monthly_price"])
+                                log_payment(
+                                    u["user_id"], u["business_name"], u["email"],
+                                    plan, pay_amount, "Initial activation"
+                                )
+                                st.cache_data.clear()
                                 st.success(f"✅ {u['business_name']} activated until {end_dt}")
                                 st.rerun()
                     with col3:
@@ -2142,6 +2275,14 @@ def page_admin():
                         new_end  = (base + timedelta(days=ext_days)).strftime("%Y-%m-%d")
                         update_row_by_id(SHEET_USERS, "user_id", u["user_id"],
                                          {"subscription_end": new_end})
+                        pay_amount = (PAYMENT_DETAILS["yearly_price"]
+                                      if ext_days == 365
+                                      else PAYMENT_DETAILS["monthly_price"])
+                        log_payment(
+                            u["user_id"], u["business_name"], u["email"],
+                            u.get("plan_type", "monthly"), pay_amount, "Renewal"
+                        )
+                        st.cache_data.clear()
                         st.success(f"✅ Renewed to {new_end}")
                         st.rerun()
                 with col3:
@@ -2154,6 +2295,94 @@ def page_admin():
     # ── MRR & Growth ──
     with tab3:
         st.markdown("### 📈 Monthly Recurring Revenue")
+
+        # ── Real collected revenue section (from PAYMENTS ledger) ──
+        payments_df = get_payments_df()
+        if not payments_df.empty:
+            st.markdown("#### 💰 Actual Collected Revenue by Month")
+            pay_chart = payments_df.copy()
+            pay_chart["month"] = pay_chart["payment_date"].dt.to_period("M")
+            monthly_collected = (
+                pay_chart.groupby("month")
+                .agg(collected=("amount", "sum"), count=("amount", "count"))
+                .reset_index()
+            )
+            monthly_collected["month_str"] = monthly_collected["month"].dt.strftime("%b %Y")
+
+            fig_collected = go.Figure()
+            fig_collected.add_trace(go.Bar(
+                x=monthly_collected["month_str"],
+                y=monthly_collected["collected"],
+                name="Collected",
+                marker_color="#10b981",
+                text=[fmt_naira(v) for v in monthly_collected["collected"]],
+                textposition="outside",
+            ))
+            fig_collected.update_layout(
+                title="Cash Collected per Month",
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)",
+                yaxis=dict(tickprefix="₦", gridcolor="#f1f5f9"),
+                margin=dict(l=0, r=0, t=40, b=0),
+                height=300,
+                showlegend=False,
+            )
+            st.plotly_chart(fig_collected, use_container_width=True)
+
+            # Plan type breakdown
+            plan_totals = (
+                pay_chart.groupby("plan_type")["amount"]
+                .sum().reset_index()
+                .rename(columns={"amount": "total"})
+            )
+            col_l, col_r = st.columns(2)
+            with col_l:
+                fig_pie = px.pie(
+                    plan_totals, values="total", names="plan_type",
+                    title="Revenue by Plan Type",
+                    color_discrete_sequence=["#6366f1", "#10b981", "#f59e0b"],
+                    hole=0.45,
+                )
+                fig_pie.update_layout(
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    margin=dict(l=0, r=0, t=40, b=0),
+                    height=280,
+                )
+                st.plotly_chart(fig_pie, use_container_width=True)
+            with col_r:
+                st.markdown("**Payment breakdown**")
+                for _, row in plan_totals.iterrows():
+                    pct = row["total"] / payments_df["amount"].sum() * 100
+                    st.markdown(
+                        f"**{row['plan_type'].capitalize()}** — "
+                        f"{fmt_naira(row['total'])} ({pct:.1f}%)"
+                    )
+                st.markdown("---")
+                st.markdown(f"**Total payments received:** {len(payments_df)}")
+                st.markdown(
+                    f"**Latest payment:** "
+                    f"{payments_df['payment_date'].max().strftime('%d %b %Y')}"
+                )
+
+            st.markdown("---")
+            with st.expander("📋 Full payment ledger"):
+                show = payments_df[[c for c in
+                    ["payment_id","business_name","email","plan_type",
+                     "amount","payment_date","note"]
+                    if c in payments_df.columns
+                ]].sort_values("payment_date", ascending=False)
+                st.dataframe(show, use_container_width=True)
+                csv = show.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    "⬇️ Export Payment Ledger CSV", data=csv,
+                    file_name="bizpulse_payments.csv", mime="text/csv",
+                )
+            st.markdown("---")
+        else:
+            st.info("💡 No payment records yet. They'll appear here as you activate users.")
+            st.markdown("---")
+
+        st.markdown("#### 📊 Estimated MRR (Active Users)")
 
         # Build a month-by-month activation history from created_at + plan_type
         import calendar
@@ -2356,6 +2585,14 @@ def page_admin():
                                         SHEET_USERS, "user_id", u["user_id"],
                                         {"subscription_end": new_end}
                                     )
+                                    pay_amount = (PAYMENT_DETAILS["yearly_price"]
+                                                  if ext_days == 365
+                                                  else PAYMENT_DETAILS["monthly_price"])
+                                    log_payment(
+                                        u["user_id"], u["business_name"], u["email"],
+                                        u.get("plan_type", "monthly"), pay_amount,
+                                        "Renewal — churn prevention"
+                                    )
                                     st.cache_data.clear()
                                     st.success(f"✅ Renewed to {new_end}")
                                     st.rerun()
@@ -2428,6 +2665,14 @@ def page_admin():
                                                 "subscription_start": datetime.now().strftime("%Y-%m-%d"),
                                                 "subscription_end": new_end,
                                             }
+                                        )
+                                        pay_amount = (PAYMENT_DETAILS["yearly_price"]
+                                                      if ext_days == 365
+                                                      else PAYMENT_DETAILS["monthly_price"])
+                                        log_payment(
+                                            u["user_id"], u["business_name"], u["email"],
+                                            u.get("plan_type", "monthly"), pay_amount,
+                                            "Reactivation — win-back"
                                         )
                                         st.cache_data.clear()
                                         st.success(f"✅ Reactivated until {new_end}")
