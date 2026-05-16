@@ -2052,14 +2052,15 @@ def page_admin():
                     st.markdown(f"**{u['business_name']}** — {u['full_name']}")
                     st.caption(f"📧 {u['email']} | {u['plan_type']} | Expires: {u.get('subscription_end','?')}")
                 with col2:
-                    # Extend by 30 days
-                    if st.button("🔁 Extend 30d", key=f"ext_{u['user_id']}"):
+                    ext_days  = 365 if u.get("plan_type") == "yearly" else 30
+                    ext_label = "1 year" if ext_days == 365 else "30 days"
+                    if st.button(f"🔁 Renew ({ext_label})", key=f"ext_{u['user_id']}"):
                         curr_end = parse_date(u.get("subscription_end", ""))
                         base     = curr_end if (curr_end and curr_end > datetime.now()) else datetime.now()
-                        new_end  = (base + timedelta(days=30)).strftime("%Y-%m-%d")
+                        new_end  = (base + timedelta(days=ext_days)).strftime("%Y-%m-%d")
                         update_row_by_id(SHEET_USERS, "user_id", u["user_id"],
                                          {"subscription_end": new_end})
-                        st.success(f"Extended to {new_end}")
+                        st.success(f"✅ Renewed to {new_end}")
                         st.rerun()
                 with col3:
                     if st.button("⛔ Deactivate", key=f"deact_{u['user_id']}"):
