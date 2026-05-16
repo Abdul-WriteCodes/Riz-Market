@@ -37,14 +37,14 @@ SHEET_PRODUCTS = "PRODUCTS"
 SHEET_SALES    = "SALES"
 SHEET_EXPENSES = "EXPENSES"
 
-# Payment details (update to your real account)
+# Plan pricing & Flutterwave links
 PAYMENT_DETAILS = {
-    "bank":          "Your Bank Name",
-    "account_name":  "Your Business Name",
-    "account_number":"0000000000",
-    "monthly_price": 1000,
-    "yearly_price":  10000,
-    "trial_days":    14,
+    "monthly_price":      1500,
+    "yearly_price":       15000,
+    "trial_days":         14,
+    # ── Paste your Flutterwave payment links below ──
+    "flutterwave_monthly": "https://flutterwave.com/pay/YOUR_MONTHLY_LINK",
+    "flutterwave_yearly":  "https://flutterwave.com/pay/YOUR_YEARLY_LINK",
 }
 
 # Admin credentials from secrets
@@ -186,6 +186,83 @@ def inject_styles():
     .stButton > button[kind="primary"] {
         background: linear-gradient(135deg, #6366f1, #4f46e5);
         border: none; color: white;
+    }
+
+    /* ── Pricing Cards ── */
+    .pricing-grid {
+        display: flex; gap: 1.5rem; justify-content: center;
+        flex-wrap: wrap; margin: 2rem 0;
+    }
+    .pricing-card {
+        background: #ffffff;
+        border: 2px solid #e2e8f0;
+        border-radius: 20px;
+        padding: 2rem 1.75rem;
+        flex: 1; min-width: 220px; max-width: 300px;
+        text-align: center;
+        transition: transform 0.2s, box-shadow 0.2s;
+        position: relative;
+    }
+    .pricing-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 20px 40px rgba(0,0,0,0.08);
+    }
+    .pricing-card.featured {
+        border-color: #6366f1;
+        background: linear-gradient(160deg, #f5f3ff 0%, #eef2ff 100%);
+        transform: translateY(-6px);
+        box-shadow: 0 24px 48px rgba(99,102,241,0.18);
+    }
+    .pricing-badge {
+        position: absolute; top: -13px; left: 50%; transform: translateX(-50%);
+        background: linear-gradient(135deg, #6366f1, #4f46e5);
+        color: white; font-size: 0.65rem; font-weight: 700;
+        padding: 4px 14px; border-radius: 99px;
+        text-transform: uppercase; letter-spacing: 0.08em;
+        white-space: nowrap;
+    }
+    .pricing-plan-name {
+        font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em;
+        text-transform: uppercase; color: #64748b; margin-bottom: 0.75rem;
+    }
+    .pricing-price {
+        font-size: 2.4rem; font-weight: 800; color: #0f172a;
+        font-family: 'JetBrains Mono', monospace; line-height: 1;
+    }
+    .pricing-price span {
+        font-size: 1rem; font-weight: 600; color: #64748b;
+        font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    .pricing-desc {
+        font-size: 0.8rem; color: #94a3b8; margin: 0.5rem 0 1.25rem 0;
+    }
+    .pricing-features {
+        list-style: none; padding: 0; margin: 0 0 1.5rem 0;
+        text-align: left;
+    }
+    .pricing-features li {
+        font-size: 0.83rem; color: #475569;
+        padding: 0.35rem 0; border-bottom: 1px solid #f1f5f9;
+        display: flex; align-items: center; gap: 0.5rem;
+    }
+    .pricing-features li:last-child { border-bottom: none; }
+    .pricing-features li::before { content: "✓"; color: #10b981; font-weight: 700; }
+
+    /* ── Auth page wide layout ── */
+    .auth-wide {
+        max-width: 960px; margin: 1.5rem auto;
+    }
+    .auth-form-wrap {
+        max-width: 480px; margin: 0 auto;
+        background: white; border-radius: 20px;
+        padding: 2.5rem; box-shadow: 0 20px 60px rgba(0,0,0,0.08);
+        border: 1px solid #e2e8f0;
+    }
+
+    /* ── Forgot password link ── */
+    .forgot-link {
+        font-size: 0.82rem; color: #6366f1; text-decoration: none;
+        cursor: pointer; font-weight: 500;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -708,37 +785,55 @@ def stock_pill(qty, reorder):
 
 def page_login():
     inject_styles()
-    st.markdown('<div class="auth-card">', unsafe_allow_html=True)
-    st.markdown('<div class="auth-logo">📊 BizPulse</div>', unsafe_allow_html=True)
-    st.markdown('<div class="auth-tagline">Business health at a glance</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div style="max-width:440px;margin:2.5rem auto;">
+        <div style="text-align:center;margin-bottom:2rem;">
+            <div style="font-size:2.2rem;font-weight:800;color:#0f172a;">📊 BizPulse</div>
+            <div style="color:#64748b;font-size:0.9rem;margin-top:0.3rem;">
+                Business intelligence for Nigerian SMEs
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    with st.form("login_form"):
-        email    = st.text_input("Email address", placeholder="you@business.com")
-        password = st.text_input("Password", type="password", placeholder="••••••••")
-        submitted = st.form_submit_button("Sign In", use_container_width=True, type="primary")
+    with st.container():
+        col = st.columns([1, 3, 1])[1]
+        with col:
+            st.markdown('<div class="auth-form-wrap">', unsafe_allow_html=True)
+            st.markdown("### Welcome back")
 
-    if submitted:
-        if not email or not password:
-            st.error("Please fill in all fields.")
-        else:
-            with st.spinner("Signing in…"):
-                ok, user, msg = login_user(email.strip(), password)
-            if ok:
-                st.session_state.user        = user
-                st.session_state.logged_in   = True
-                st.session_state.current_page = "dashboard"
-                st.success(msg)
+            with st.form("login_form"):
+                email    = st.text_input("Email address", placeholder="you@business.com")
+                password = st.text_input("Password", type="password", placeholder="••••••••")
+                submitted = st.form_submit_button("Sign In →", use_container_width=True, type="primary")
+
+            if submitted:
+                if not email or not password:
+                    st.error("Please fill in all fields.")
+                else:
+                    with st.spinner("Signing in…"):
+                        ok, user, msg = login_user(email.strip(), password)
+                    if ok:
+                        st.session_state.user         = user
+                        st.session_state.logged_in    = True
+                        st.session_state.current_page = "dashboard"
+                        st.rerun()
+                    else:
+                        st.error(msg)
+
+            st.markdown('<div style="text-align:right;margin-top:-0.5rem;margin-bottom:1rem;">', unsafe_allow_html=True)
+            if st.button("Forgot password?", key="goto_forgot", help="Request a password reset"):
+                st.session_state.current_page = "forgot_password"
                 st.rerun()
-            else:
-                st.error(msg)
+            st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown("---")
-    st.markdown("Don't have an account?")
-    if st.button("Create free account →", use_container_width=True):
-        st.session_state.current_page = "signup"
-        st.rerun()
+            st.markdown("---")
+            st.markdown('<div style="text-align:center;font-size:0.875rem;color:#64748b;">New to BizPulse?</div>', unsafe_allow_html=True)
+            if st.button("Start free 14-day trial →", use_container_width=True):
+                st.session_state.current_page = "signup"
+                st.rerun()
 
-    st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────
@@ -747,32 +842,108 @@ def page_login():
 
 def page_signup():
     inject_styles()
-    st.markdown('<div class="auth-card">', unsafe_allow_html=True)
-    st.markdown('<div class="auth-logo">📊 BizPulse</div>', unsafe_allow_html=True)
-    st.markdown('<div class="auth-tagline">Start your 14-day free trial</div>', unsafe_allow_html=True)
+
+    # ── Hero ──
+    st.markdown("""
+    <div style="text-align:center;padding:2rem 1rem 0.5rem 1rem;">
+        <div style="font-size:2.2rem;font-weight:800;color:#0f172a;">📊 BizPulse</div>
+        <div style="font-size:1.1rem;font-weight:600;color:#334155;margin-top:0.4rem;">
+            Simple business intelligence for Nigerian SMEs
+        </div>
+        <div style="font-size:0.9rem;color:#64748b;margin-top:0.25rem;">
+            Track sales, inventory, expenses and profit — all in one place.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Pricing Cards ──
+    st.markdown("""
+    <div class="pricing-grid">
+
+      <!-- Free Trial -->
+      <div class="pricing-card">
+        <div class="pricing-plan-name">Free Trial</div>
+        <div class="pricing-price">₦0<span>/14 days</span></div>
+        <div class="pricing-desc">No card required. Full access for 14 days.</div>
+        <ul class="pricing-features">
+          <li>Sales recording</li>
+          <li>Inventory management</li>
+          <li>Expense tracking</li>
+          <li>Dashboard analytics</li>
+          <li>Up to 50 products</li>
+        </ul>
+      </div>
+
+      <!-- Monthly — Featured -->
+      <div class="pricing-card featured">
+        <div class="pricing-badge">Most Popular</div>
+        <div class="pricing-plan-name">Monthly</div>
+        <div class="pricing-price">₦1,500<span>/month</span></div>
+        <div class="pricing-desc">Billed monthly. Cancel anytime.</div>
+        <ul class="pricing-features">
+          <li>Everything in Trial</li>
+          <li>Unlimited products</li>
+          <li>Business insights</li>
+          <li>Sales trend reports</li>
+          <li>Low stock alerts</li>
+        </ul>
+      </div>
+
+      <!-- Yearly -->
+      <div class="pricing-card">
+        <div class="pricing-badge" style="background:linear-gradient(135deg,#10b981,#059669);">Save ₦3,000</div>
+        <div class="pricing-plan-name">Yearly</div>
+        <div class="pricing-price">₦15,000<span>/year</span></div>
+        <div class="pricing-desc">₦1,250/month — 2 months free!</div>
+        <ul class="pricing-features">
+          <li>Everything in Monthly</li>
+          <li>Best value plan</li>
+          <li>Priority activation</li>
+          <li>Full year coverage</li>
+          <li>2 months free</li>
+        </ul>
+      </div>
+
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Signup Form ──
+    st.markdown("---")
+    st.markdown("### Create your account")
+
+    # Plan selector outside the form so it shows clearly
+    plan = st.radio(
+        "Choose your plan",
+        options=["trial", "monthly", "yearly"],
+        format_func=lambda x: {
+            "trial":   f"🎁 Free Trial — 14 days free, no payment",
+            "monthly": f"📅 Monthly — ₦1,500/month",
+            "yearly":  f"🏆 Yearly — ₦15,000/year  (save ₦3,000!)",
+        }[x],
+        horizontal=True,
+        key="signup_plan_select",
+    )
 
     with st.form("signup_form"):
-        business_name = st.text_input("Business name", placeholder="Mama Put Express")
-        full_name     = st.text_input("Your full name", placeholder="Adaeze Okafor")
-        email         = st.text_input("Email address", placeholder="you@business.com")
-        password      = st.text_input("Password (min 6 chars)", type="password")
-        confirm_pw    = st.text_input("Confirm password", type="password")
+        col1, col2 = st.columns(2)
+        with col1:
+            business_name = st.text_input("Business name", placeholder="Mama Put Express")
+            email         = st.text_input("Email address", placeholder="you@business.com")
+            password      = st.text_input("Password (min 6 chars)", type="password")
+        with col2:
+            full_name  = st.text_input("Your full name", placeholder="Adaeze Okafor")
+            confirm_pw = st.text_input("Confirm password", type="password")
 
-        st.markdown("#### Choose your plan")
-        plan = st.radio(
-            "Plan",
-            options=["trial", "monthly", "yearly"],
-            format_func=lambda x: {
-                "trial":   f"🎁 Free Trial — {PAYMENT_DETAILS['trial_days']} days, no payment needed",
-                "monthly": f"📅 Monthly — ₦{PAYMENT_DETAILS['monthly_price']:,}/month",
-                "yearly":  f"🏆 Yearly — ₦{PAYMENT_DETAILS['yearly_price']:,}/year (save 2 months!)",
-            }[x],
-            label_visibility="collapsed",
-        )
+        btn_label = {
+            "trial":   "Start Free Trial →",
+            "monthly": "Create Account & Pay Monthly →",
+            "yearly":  "Create Account & Pay Yearly →",
+        }.get(plan, "Create Account →")
 
-        submitted = st.form_submit_button("Create Account", use_container_width=True, type="primary")
+        submitted = st.form_submit_button(btn_label, use_container_width=True, type="primary")
 
     if submitted:
+        _plan = st.session_state.get("signup_plan_select", plan)
         if not all([business_name, full_name, email, password, confirm_pw]):
             st.error("Please fill in all fields.")
         elif password != confirm_pw:
@@ -780,15 +951,17 @@ def page_signup():
         else:
             with st.spinner("Creating your account…"):
                 ok, msg = signup_user(business_name.strip(), full_name.strip(),
-                                      email.strip(), password, plan)
+                                      email.strip(), password, _plan)
             if ok:
-                st.success(msg)
-                if plan == "trial":
-                    st.info("Your 14-day trial is active! Sign in to get started.")
+                if _plan == "trial":
+                    st.success("🎉 Your 14-day free trial is active! Sign in to get started.")
+                    if st.button("Go to Sign In →"):
+                        st.session_state.current_page = "login"
+                        st.rerun()
                 else:
-                    st.session_state.current_page = "pending_payment"
                     st.session_state.pending_email = email.strip()
-                    st.session_state.pending_plan  = plan
+                    st.session_state.pending_plan  = _plan
+                    st.session_state.current_page  = "pending_payment"
                     st.rerun()
             else:
                 st.error(msg)
@@ -798,8 +971,6 @@ def page_signup():
         st.session_state.current_page = "login"
         st.rerun()
 
-    st.markdown('</div>', unsafe_allow_html=True)
-
 
 # ─────────────────────────────────────────────
 #  PAGE: PENDING PAYMENT
@@ -807,42 +978,156 @@ def page_signup():
 
 def page_pending_payment():
     inject_styles()
-    user  = st.session_state.get("user", {})
-    plan  = user.get("plan_type") or st.session_state.get("pending_plan", "monthly")
-    email = user.get("email")    or st.session_state.get("pending_email", "")
+    user   = st.session_state.get("user", {})
+    plan   = user.get("plan_type") or st.session_state.get("pending_plan", "monthly")
+    email  = user.get("email")    or st.session_state.get("pending_email", "")
     amount = (PAYMENT_DETAILS["yearly_price"]
               if plan == "yearly"
               else PAYMENT_DETAILS["monthly_price"])
+    fw_link = (PAYMENT_DETAILS["flutterwave_yearly"]
+               if plan == "yearly"
+               else PAYMENT_DETAILS["flutterwave_monthly"])
+    savings_note = " — save ₦3,000!" if plan == "yearly" else ""
 
-    page_header("💳 Complete Your Payment", "One step away from full access")
+    st.markdown("""
+    <div style="max-width:600px;margin:2rem auto;">
+        <div style="text-align:center;margin-bottom:1.5rem;">
+            <div style="font-size:2rem;font-weight:800;color:#0f172a;">📊 BizPulse</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    col1, col2 = st.columns([3, 2])
-    with col1:
-        st.info(f"""
-**Transfer ₦{amount:,} to:**
+    st.markdown(f"""
+    <div style="max-width:600px;margin:0 auto;background:white;border-radius:20px;
+                padding:2.5rem;box-shadow:0 20px 60px rgba(0,0,0,0.08);
+                border:1px solid #e2e8f0;text-align:center;">
 
-🏦 **Bank:** {PAYMENT_DETAILS['bank']}
-👤 **Account Name:** {PAYMENT_DETAILS['account_name']}
-🔢 **Account Number:** `{PAYMENT_DETAILS['account_number']}`
+        <div style="font-size:3rem;margin-bottom:0.5rem;">🎉</div>
+        <div style="font-size:1.5rem;font-weight:800;color:#0f172a;margin-bottom:0.5rem;">
+            Account created!
+        </div>
+        <div style="color:#64748b;font-size:0.95rem;margin-bottom:2rem;">
+            One last step — complete your payment to activate full access.
+        </div>
 
-📌 **Use your email as payment reference:**
-`{email}`
+        <div style="background:#f8fafc;border-radius:14px;padding:1.5rem;
+                    border:1px solid #e2e8f0;margin-bottom:1.75rem;text-align:left;">
+            <div style="display:flex;justify-content:space-between;align-items:center;
+                        margin-bottom:0.75rem;">
+                <span style="font-weight:600;color:#334155;">Plan</span>
+                <span style="font-weight:700;color:#6366f1;">
+                    {plan.capitalize()}{savings_note}
+                </span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;
+                        margin-bottom:0.75rem;">
+                <span style="font-weight:600;color:#334155;">Amount</span>
+                <span style="font-weight:800;font-size:1.3rem;color:#0f172a;">
+                    ₦{amount:,}
+                </span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="font-weight:600;color:#334155;">Email</span>
+                <span style="color:#475569;font-size:0.875rem;">{email}</span>
+            </div>
+        </div>
 
-After transfer, your account will be activated within **24 hours**.
-        """)
+        <div style="font-size:0.82rem;color:#94a3b8;margin-bottom:1.5rem;">
+            🔒 Secure payment via Flutterwave. Your account will be activated
+            within <strong>24 hours</strong> after payment is confirmed.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Centred pay button
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.link_button(
+            f"💳 Pay ₦{amount:,} via Flutterwave →",
+            url=fw_link,
+            use_container_width=True,
+            type="primary",
+        )
+        st.markdown("<div style='margin-top:0.75rem;'></div>", unsafe_allow_html=True)
+        if st.button("← Back to Sign In", use_container_width=True):
+            st.session_state.current_page = "login"
+            st.rerun()
+
+    st.markdown("""
+    <div style="max-width:600px;margin:1.5rem auto;text-align:center;
+                font-size:0.8rem;color:#94a3b8;">
+        Already paid? Your account will be activated shortly.
+        Contact support if you don't hear back within 24 hours.
+    </div>
+    """, unsafe_allow_html=True)
+
+
+
+# ─────────────────────────────────────────────
+#  PAGE: FORGOT PASSWORD
+# ─────────────────────────────────────────────
+
+def page_forgot_password():
+    inject_styles()
+    st.markdown("""
+    <div style="max-width:440px;margin:2.5rem auto;text-align:center;margin-bottom:1rem;">
+        <div style="font-size:2rem;font-weight:800;color:#0f172a;">📊 BizPulse</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns([1, 3, 1])
+    with col2:
+        st.markdown('<div class="auth-form-wrap">', unsafe_allow_html=True)
+        st.markdown("### Reset your password")
+        st.markdown(
+            '<div style="color:#64748b;font-size:0.875rem;margin-bottom:1.25rem;">'
+            'Enter your email and we will flag your account for a password reset. '
+            'You will be able to log in with a new password once it has been processed.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+        with st.form("forgot_pw_form"):
+            email     = st.text_input("Email address", placeholder="you@business.com")
+            submitted = st.form_submit_button("Request Password Reset →",
+                                              use_container_width=True, type="primary")
+
+        if submitted:
+            if not email:
+                st.error("Please enter your email address.")
+            else:
+                email = email.strip().lower()
+                users_df = read_sheet(SHEET_USERS)
+                match = users_df[users_df["email"].str.lower() == email] if not users_df.empty else pd.DataFrame()
+
+                if match.empty:
+                    # Deliberately vague — do not reveal whether email exists
+                    st.success(
+                        "If that email is registered, a reset request has been submitted. "
+                        "You will be contacted within 24 hours."
+                    )
+                else:
+                    user_id = match.iloc[0]["user_id"]
+                    ok = update_row_by_id(
+                        SHEET_USERS, "user_id", user_id,
+                        {"password_reset_requested": "yes",
+                         "reset_requested_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+                    )
+                    st.cache_data.clear()
+                    if ok:
+                        st.success(
+                            "✅ Reset request submitted! Your password will be reset within 24 hours. "
+                            "You will receive a new temporary password via the contact you provided."
+                        )
+                    else:
+                        st.error("Something went wrong. Please try again.")
 
         st.markdown("---")
-        st.markdown("**Already paid?** We'll activate your account shortly. "
-                    "You'll be able to log in once activated.")
+        if st.button("← Back to Sign In", use_container_width=True):
+            st.session_state.current_page = "login"
+            st.rerun()
 
-    with col2:
-        st.markdown("#### Plan Summary")
-        kpi_card("Plan Type", plan.capitalize(), f"₦{amount:,}", True)
-        kpi_card("Email", email, "Use as transfer reference")
-
-    if st.button("← Back to Login"):
-        st.session_state.current_page = "login"
-        st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────
@@ -1731,12 +2016,12 @@ def page_admin():
         yearly_rev = len(users_df[
             (users_df["plan_type"] == "yearly") &
             (users_df["plan_status"] == "active")
-        ]) * (PAYMENT_DETAILS["yearly_price"] / 12)
+        ]) * (PAYMENT_DETAILS["yearly_price"] / 12)  # normalise yearly to monthly
         kpi_card("Est. Monthly Revenue",
                  fmt_naira(monthly_rev + yearly_rev), "From active paid plans")
 
     st.markdown("---")
-    tab1, tab2, tab3 = st.tabs(["⏳ Pending Activation", "✅ Active Users", "👥 All Users"])
+    tab1, tab2, tab3, tab4 = st.tabs(["⏳ Pending Activation", "✅ Active Users", "🔑 Password Resets", "👥 All Users"])
 
     # ── Pending ──
     with tab1:
@@ -1800,8 +2085,67 @@ def page_admin():
                         st.rerun()
                 st.markdown("---")
 
-    # ── All Users ──
+    # ── Password Resets ──
     with tab3:
+        if "password_reset_requested" not in users_df.columns:
+            st.info("No password reset requests yet.")
+        else:
+            reset_df = users_df[users_df["password_reset_requested"] == "yes"]
+            if reset_df.empty:
+                st.success("✅ No pending password reset requests.")
+            else:
+                st.warning(f"{len(reset_df)} pending reset request(s)")
+                for _, u in reset_df.iterrows():
+                    with st.container():
+                        col1, col2, col3 = st.columns([3, 2, 2])
+                        with col1:
+                            st.markdown(f"**{u['business_name']}** — {u['full_name']}")
+                            st.caption(
+                                f"📧 {u['email']} | "
+                                f"Requested: {u.get('reset_requested_at', 'unknown')}"
+                            )
+                        with col2:
+                            new_pw = st.text_input(
+                                "New password",
+                                placeholder="Enter new password",
+                                key=f"newpw_{u['user_id']}",
+                            )
+                            if st.button("✅ Reset Password", key=f"dopw_{u['user_id']}"):
+                                if not new_pw or len(new_pw) < 6:
+                                    st.error("Password must be at least 6 characters.")
+                                else:
+                                    hashed = bcrypt.hashpw(
+                                        new_pw.encode(), bcrypt.gensalt()
+                                    ).decode()
+                                    ok = update_row_by_id(
+                                        SHEET_USERS, "user_id", u["user_id"],
+                                        {
+                                            "password_hash":             hashed,
+                                            "password_reset_requested":  "no",
+                                            "reset_requested_at":        "",
+                                        }
+                                    )
+                                    st.cache_data.clear()
+                                    if ok:
+                                        st.success(
+                                            f"✅ Password reset for {u['email']}. "
+                                            f"Notify them of their new password."
+                                        )
+                                        st.rerun()
+                                    else:
+                                        st.error("Failed to update password. Try again.")
+                        with col3:
+                            if st.button("✖ Dismiss", key=f"dismis_{u['user_id']}"):
+                                update_row_by_id(
+                                    SHEET_USERS, "user_id", u["user_id"],
+                                    {"password_reset_requested": "no", "reset_requested_at": ""}
+                                )
+                                st.cache_data.clear()
+                                st.rerun()
+                        st.markdown("---")
+
+    # ── All Users ──
+    with tab4:
         show_cols = ["business_name","full_name","email","plan_type","plan_status","subscription_end","created_at"]
         display   = users_df[[c for c in show_cols if c in users_df.columns]]
         st.dataframe(display, use_container_width=True)
@@ -1912,27 +2256,57 @@ def check_access():
 
     if status == "expired":
         inject_styles()
-        page_header("⏰ Subscription Expired", "Your access period has ended.")
-        st.warning(
-            "Your subscription has expired. Please make a payment to continue "
-            "accessing BizPulse."
-        )
-        st.info(f"""
-**Renew your subscription:**
-
-🏦 Bank: {PAYMENT_DETAILS['bank']}
-👤 Account Name: {PAYMENT_DETAILS['account_name']}
-🔢 Account Number: `{PAYMENT_DETAILS['account_number']}`
-
-📌 Use your email **{user.get('email','')}** as reference.
-Monthly: ₦{PAYMENT_DETAILS['monthly_price']:,} | Yearly: ₦{PAYMENT_DETAILS['yearly_price']:,}
-
-Your account will be reactivated within 24 hours of payment.
-        """)
-        if st.button("Sign Out"):
-            for key in ["user","logged_in","current_page"]:
-                st.session_state.pop(key, None)
-            st.rerun()
+        email = user.get("email", "")
+        st.markdown(f"""
+        <div style="max-width:560px;margin:3rem auto;background:white;border-radius:20px;
+                    padding:2.5rem;box-shadow:0 20px 60px rgba(0,0,0,0.08);
+                    border:1px solid #e2e8f0;text-align:center;">
+            <div style="font-size:2.5rem;margin-bottom:0.5rem;">⏰</div>
+            <div style="font-size:1.4rem;font-weight:800;color:#0f172a;margin-bottom:0.5rem;">
+                Subscription Expired
+            </div>
+            <div style="color:#64748b;font-size:0.9rem;margin-bottom:2rem;">
+                Your access period has ended. Renew to continue using BizPulse.
+            </div>
+            <div style="background:#f8fafc;border-radius:14px;padding:1.25rem;
+                        border:1px solid #e2e8f0;margin-bottom:1.75rem;text-align:left;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:0.6rem;">
+                    <span style="font-weight:600;color:#334155;">Monthly</span>
+                    <span style="font-weight:700;color:#0f172a;">
+                        ₦{PAYMENT_DETAILS['monthly_price']:,}/month
+                    </span>
+                </div>
+                <div style="display:flex;justify-content:space-between;">
+                    <span style="font-weight:600;color:#334155;">Yearly</span>
+                    <span style="font-weight:700;color:#10b981;">
+                        ₦{PAYMENT_DETAILS['yearly_price']:,}/year — save ₦3,000
+                    </span>
+                </div>
+            </div>
+            <div style="font-size:0.8rem;color:#94a3b8;margin-bottom:1.5rem;">
+                🔒 Secure payment via Flutterwave. Reactivated within 24 hours.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.link_button(
+                f"💳 Renew Monthly — ₦{PAYMENT_DETAILS['monthly_price']:,}",
+                url=PAYMENT_DETAILS["flutterwave_monthly"],
+                use_container_width=True,
+                type="primary",
+            )
+            st.markdown("<div style='margin-top:0.5rem;'></div>", unsafe_allow_html=True)
+            st.link_button(
+                f"🏆 Renew Yearly — ₦{PAYMENT_DETAILS['yearly_price']:,} (best value)",
+                url=PAYMENT_DETAILS["flutterwave_yearly"],
+                use_container_width=True,
+            )
+            st.markdown("<div style='margin-top:0.75rem;'></div>", unsafe_allow_html=True)
+            if st.button("Sign Out", use_container_width=True):
+                for key in ["user", "logged_in", "current_page"]:
+                    st.session_state.pop(key, None)
+                st.rerun()
         return False
 
     if not is_subscription_active(user):
@@ -1962,6 +2336,8 @@ def main():
             page_signup()
         elif st.session_state.current_page == "pending_payment":
             page_pending_payment()
+        elif st.session_state.current_page == "forgot_password":
+            page_forgot_password()
         else:
             page_login()
         return
