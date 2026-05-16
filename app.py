@@ -2079,7 +2079,14 @@ def page_admin():
                  fmt_naira(monthly_rev + yearly_rev), "From active paid plans")
 
     st.markdown("---")
-    tab1, tab2, tab3, tab4 = st.tabs(["⏳ Pending Activation", "✅ Active Users", "🔑 Password Resets", "👥 All Users"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "⏳ Pending Activation",
+        "✅ Active Users",
+        "📈 MRR & Growth",
+        "🚨 Churn Alerts",
+        "🔑 Password Resets",
+        "👥 All Users",
+    ])
 
     # ── Pending ──
     with tab1:
@@ -2144,8 +2151,292 @@ def page_admin():
                         st.rerun()
                 st.markdown("---")
 
-    # ── Password Resets ──
+    # ── MRR & Growth ──
     with tab3:
+        st.markdown("### 📈 Monthly Recurring Revenue")
+
+        # Build a month-by-month activation history from created_at + plan_type
+        import calendar
+
+        paid_df = users_df[
+            (users_df["plan_status"].isin(["active", "expired"])) &
+            (users_df["plan_type"].isin(["monthly", "yearly"]))
+        ].copy()
+
+        if paid_df.empty:
+            st.info("No paid user data yet. MRR chart will appear once users activate.")
+        else:
+            # Parse activation dates
+            paid_df["activation_date"] = pd.to_datetime(
+                paid_df["subscription_start"], errors="coerce"
+            )
+            paid_df = paid_df.dropna(subset=["activation_date"])
+
+            if paid_df.empty:
+                st.info("No activation dates found. Activate users to start tracking MRR.")
+            else:
+                # Build monthly cohort: for each calendar month, count active paid users
+                # and their contribution to MRR
+                min_month = paid_df["activation_date"].dt.to_period("M").min()
+                max_month = pd.Timestamp.now().to_period("M")
+                periods   = pd.period_range(min_month, max_month, freq="M")
+
+                mrr_rows = []
+                for period in periods:
+                    period_end = pd.Timestamp(period.to_timestamp("M"))
+                    # User is "active" in this month if activated on or before month end
+                    # and subscription_end is after month start
+                    month_start = pd.Timestamp(period.to_timestamp())
+                    active_mask = paid_df["activation_date"] <= period_end
+                    # Check subscription_end if available
+                    if "subscription_end" in paid_df.columns:
+                        sub_end = pd.to_datetime(paid_df["subscription_end"], errors="coerce")
+                        active_mask = active_mask & (
+                            sub_end.isna() | (sub_end >= month_start)
+                        )
+                    cohort   = paid_df[active_mask]
+                    monthly_c = len(cohort[cohort["plan_type"] == "monthly"])
+                    yearly_c  = len(cohort[cohort["plan_type"] == "yearly"])
+                    mrr       = (monthly_c * PAYMENT_DETAILS["monthly_price"] +
+                                 yearly_c  * (PAYMENT_DETAILS["yearly_price"] / 12))
+                    mrr_rows.append({
+                        "month":   period.strftime("%b %Y"),
+                        "mrr":     mrr,
+                        "monthly": monthly_c,
+                        "yearly":  yearly_c,
+                        "total":   monthly_c + yearly_c,
+                    })
+
+                mrr_df = pd.DataFrame(mrr_rows)
+
+                # ── KPIs ──
+                current_mrr  = mrr_df["mrr"].iloc[-1]  if not mrr_df.empty else 0
+                previous_mrr = mrr_df["mrr"].iloc[-2]  if len(mrr_df) > 1  else 0
+                arr          = current_mrr * 12
+                mrr_growth   = ((current_mrr - previous_mrr) / previous_mrr * 100
+                                if previous_mrr > 0 else 0)
+
+                k1, k2, k3, k4 = st.columns(4)
+                with k1:
+                    kpi_card("Current MRR", fmt_naira(current_mrr),
+                             "This month's recurring revenue")
+                with k2:
+                    kpi_card("ARR (projected)", fmt_naira(arr),
+                             "MRR × 12")
+                with k3:
+                    direction = "▲" if mrr_growth >= 0 else "▼"
+                    kpi_card("MRR Growth", f"{direction} {abs(mrr_growth):.1f}%",
+                             "vs last month", positive=(mrr_growth >= 0))
+                with k4:
+                    kpi_card("Paid Users", str(int(mrr_df["total"].iloc[-1])),
+                             f"{int(mrr_df['monthly'].iloc[-1])} monthly · "
+                             f"{int(mrr_df['yearly'].iloc[-1])} yearly")
+
+                st.markdown("---")
+
+                # ── MRR Bar Chart ──
+                fig_mrr = go.Figure()
+                fig_mrr.add_trace(go.Bar(
+                    x=mrr_df["month"], y=mrr_df["mrr"],
+                    name="MRR",
+                    marker_color="#6366f1",
+                    text=[fmt_naira(v) for v in mrr_df["mrr"]],
+                    textposition="outside",
+                ))
+                fig_mrr.update_layout(
+                    title="Monthly Recurring Revenue",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    yaxis=dict(tickprefix="₦", gridcolor="#f1f5f9"),
+                    margin=dict(l=0, r=0, t=40, b=0),
+                    height=350,
+                    showlegend=False,
+                )
+                st.plotly_chart(fig_mrr, use_container_width=True)
+
+                # ── User count stacked bar ──
+                fig_users = go.Figure()
+                fig_users.add_trace(go.Bar(
+                    x=mrr_df["month"], y=mrr_df["monthly"],
+                    name="Monthly plan", marker_color="#6366f1",
+                ))
+                fig_users.add_trace(go.Bar(
+                    x=mrr_df["month"], y=mrr_df["yearly"],
+                    name="Yearly plan", marker_color="#10b981",
+                ))
+                fig_users.update_layout(
+                    title="Active Paid Users by Plan",
+                    barmode="stack",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    yaxis=dict(gridcolor="#f1f5f9"),
+                    margin=dict(l=0, r=0, t=40, b=0),
+                    height=300,
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02),
+                )
+                st.plotly_chart(fig_users, use_container_width=True)
+
+    # ── Churn Alerts ──
+    with tab4:
+        st.markdown("### 🚨 Churn Alerts")
+        st.caption(
+            "Users whose subscription expires within 7 days. "
+            "Reach out before they lapse."
+        )
+
+        if "subscription_end" not in users_df.columns:
+            st.info("No subscription data available.")
+        else:
+            now      = datetime.now()
+            soon     = now + timedelta(days=7)
+            active_u = users_df[users_df["plan_status"] == "active"].copy()
+
+            if active_u.empty:
+                st.info("No active users yet.")
+            else:
+                active_u["sub_end_dt"] = pd.to_datetime(
+                    active_u["subscription_end"], errors="coerce"
+                )
+                expiring = active_u[
+                    (active_u["sub_end_dt"] >= pd.Timestamp(now)) &
+                    (active_u["sub_end_dt"] <= pd.Timestamp(soon))
+                ].sort_values("sub_end_dt")
+
+                already_expired = users_df[
+                    users_df["plan_status"] == "expired"
+                ].copy()
+
+                # ── Summary KPIs ──
+                k1, k2, k3 = st.columns(3)
+                with k1:
+                    kpi_card("Expiring in 7 days", str(len(expiring)),
+                             "Need immediate attention", positive=(len(expiring) == 0))
+                with k2:
+                    kpi_card("Already Expired", str(len(already_expired)),
+                             "Lapsed — potential win-back")
+                with k3:
+                    trial_u = users_df[
+                        (users_df["plan_type"] == "trial") &
+                        (users_df["plan_status"] == "active")
+                    ]
+                    kpi_card("Active Trials", str(len(trial_u)),
+                             "Potential conversions")
+
+                st.markdown("---")
+
+                # ── Expiring soon list ──
+                st.markdown("#### ⏰ Expiring within 7 days")
+                if expiring.empty:
+                    st.success("✅ No subscriptions expiring in the next 7 days.")
+                else:
+                    for _, u in expiring.iterrows():
+                        days_left = (u["sub_end_dt"] - pd.Timestamp(now)).days
+                        color     = "#ef4444" if days_left <= 2 else "#f59e0b"
+                        with st.container(border=True):
+                            col1, col2, col3 = st.columns([3, 2, 2])
+                            with col1:
+                                st.markdown(f"**{u['business_name']}** — {u['full_name']}")
+                                st.caption(f"📧 {u['email']} | {u['plan_type'].capitalize()} plan")
+                            with col2:
+                                st.markdown(
+                                    f"<span style='color:{color};font-weight:700;'>"
+                                    f"⏳ {days_left} day{'s' if days_left != 1 else ''} left</span>"
+                                    f"<br><small style='color:#64748b;'>"
+                                    f"Expires {u['sub_end_dt'].strftime('%d %b %Y')}</small>",
+                                    unsafe_allow_html=True,
+                                )
+                            with col3:
+                                ext_days  = 365 if u.get("plan_type") == "yearly" else 30
+                                ext_label = "1 year" if ext_days == 365 else "30 days"
+                                if st.button(f"🔁 Renew ({ext_label})",
+                                             key=f"churn_ext_{u['user_id']}"):
+                                    base    = u["sub_end_dt"] if u["sub_end_dt"] > pd.Timestamp(now) else pd.Timestamp(now)
+                                    new_end = (base + timedelta(days=ext_days)).strftime("%Y-%m-%d")
+                                    update_row_by_id(
+                                        SHEET_USERS, "user_id", u["user_id"],
+                                        {"subscription_end": new_end}
+                                    )
+                                    st.cache_data.clear()
+                                    st.success(f"✅ Renewed to {new_end}")
+                                    st.rerun()
+
+                # ── Trial users expiring ──
+                st.markdown("---")
+                st.markdown("#### 🎁 Trials expiring within 7 days")
+                trial_expiring = active_u[
+                    (active_u["plan_type"] == "trial") &
+                    (active_u["sub_end_dt"] >= pd.Timestamp(now)) &
+                    (active_u["sub_end_dt"] <= pd.Timestamp(soon))
+                ].sort_values("sub_end_dt")
+
+                if trial_expiring.empty:
+                    st.success("✅ No trials expiring soon.")
+                else:
+                    st.info(f"{len(trial_expiring)} trial(s) ending soon — "
+                            "good time to reach out and convert them.")
+                    for _, u in trial_expiring.iterrows():
+                        days_left = (u["sub_end_dt"] - pd.Timestamp(now)).days
+                        with st.container(border=True):
+                            col1, col2 = st.columns([4, 2])
+                            with col1:
+                                st.markdown(f"**{u['business_name']}** — {u['full_name']}")
+                                st.caption(
+                                    f"📧 {u['email']} | "
+                                    f"Trial ends in {days_left} day{'s' if days_left != 1 else ''} "
+                                    f"({u['sub_end_dt'].strftime('%d %b %Y')})"
+                                )
+                            with col2:
+                                st.caption("Send them your Flutterwave link to convert.")
+
+                # ── Recently expired (win-back) ──
+                st.markdown("---")
+                st.markdown("#### 💔 Recently expired (last 30 days)")
+                if already_expired.empty:
+                    st.success("✅ No expired users.")
+                else:
+                    already_expired["sub_end_dt"] = pd.to_datetime(
+                        already_expired["subscription_end"], errors="coerce"
+                    )
+                    recent_expired = already_expired[
+                        already_expired["sub_end_dt"] >= pd.Timestamp(now - timedelta(days=30))
+                    ].sort_values("sub_end_dt", ascending=False)
+
+                    if recent_expired.empty:
+                        st.success("✅ No users expired in the last 30 days.")
+                    else:
+                        st.warning(f"{len(recent_expired)} user(s) lapsed recently — "
+                                   "consider a win-back message.")
+                        for _, u in recent_expired.iterrows():
+                            with st.container(border=True):
+                                col1, col2, col3 = st.columns([3, 2, 2])
+                                with col1:
+                                    st.markdown(f"**{u['business_name']}** — {u['full_name']}")
+                                    st.caption(
+                                        f"📧 {u['email']} | {u.get('plan_type','').capitalize()} | "
+                                        f"Expired: {u['sub_end_dt'].strftime('%d %b %Y') if pd.notna(u['sub_end_dt']) else 'unknown'}"
+                                    )
+                                with col2:
+                                    ext_days  = 365 if u.get("plan_type") == "yearly" else 30
+                                    ext_label = "1 year" if ext_days == 365 else "30 days"
+                                    if st.button(f"🔁 Reactivate ({ext_label})",
+                                                 key=f"react_{u['user_id']}"):
+                                        new_end = (datetime.now() + timedelta(days=ext_days)).strftime("%Y-%m-%d")
+                                        update_row_by_id(
+                                            SHEET_USERS, "user_id", u["user_id"],
+                                            {
+                                                "plan_status":      "active",
+                                                "subscription_start": datetime.now().strftime("%Y-%m-%d"),
+                                                "subscription_end": new_end,
+                                            }
+                                        )
+                                        st.cache_data.clear()
+                                        st.success(f"✅ Reactivated until {new_end}")
+                                        st.rerun()
+                                with col3:
+                                    st.caption("📤 Send Flutterwave link to renew")
+
+    # ── Password Resets ──
+    with tab5:
         if "password_reset_requested" not in users_df.columns:
             st.info("No password reset requests yet.")
         else:
@@ -2213,7 +2504,7 @@ def page_admin():
                     st.markdown("---")
 
     # ── All Users ──
-    with tab4:
+    with tab6:
         show_cols = ["business_name","full_name","email","plan_type","plan_status","subscription_end","created_at"]
         display   = users_df[[c for c in show_cols if c in users_df.columns]]
         st.dataframe(display, use_container_width=True)
