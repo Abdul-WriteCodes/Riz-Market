@@ -66,7 +66,7 @@ def inject_styles():
     }
 
     /* Hide default Streamlit elements */
-    #MainMenu, footer, { visibility: hidden; }
+    #MainMenu, footer, header { visibility: hidden; }
     .block-container { padding-top: 1.5rem; padding-bottom: 2rem; }
 
     /* ── KPI Cards ── */
@@ -212,8 +212,9 @@ def get_sheet(tab_name: str):
     return book.worksheet(tab_name)
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def read_sheet(tab_name: str) -> pd.DataFrame:
-    """Read entire sheet tab into a DataFrame."""
+    """Read entire sheet tab into a DataFrame. Cached for 30s; clear after writes."""
     try:
         ws      = get_sheet(tab_name)
         records = ws.get_all_records()
@@ -228,6 +229,7 @@ def append_row(tab_name: str, row: list):
     try:
         ws = get_sheet(tab_name)
         ws.append_row(row, value_input_option="USER_ENTERED")
+        st.cache_data.clear()   # flush read cache so next load is fresh
         return True
     except Exception as e:
         st.error(f"Error writing to {tab_name}: {e}")
@@ -262,6 +264,7 @@ def update_row_by_id(tab_name: str, id_col: str, id_val: str, updates: dict):
                     if col_name in headers:
                         col_num = headers.index(col_name) + 1
                         ws.update_cell(row_num, col_num, new_val)
+                st.cache_data.clear()   # flush read cache
                 return True
         return False
     except Exception as e:
@@ -995,24 +998,29 @@ def page_record_sale():
     col1, col2 = st.columns([2, 1])
 
     with col1:
+        # ── Product selector OUTSIDE the form so it re-renders reactively ──
+        # When the user changes the product, Streamlit re-runs and max_qty updates immediately.
+        product_options = {
+            f"{r['product_name']} (Stock: {int(r['stock_quantity'])} | ₦{r['selling_price']:,.0f})": r
+            for _, r in available.iterrows()
+        }
+        selected_label   = st.selectbox("Select product", list(product_options.keys()),
+                                        key="sale_product_select")
+        selected_product = product_options[selected_label]
+        max_qty          = int(selected_product["stock_quantity"])
+
+        # ── Payment method also outside so it's always current ──
+        payment_method = st.selectbox(
+            "Payment method", ["Cash", "Bank Transfer", "POS", "Mobile Money"],
+            key="sale_payment_method"
+        )
+
+        # ── Only quantity + submit inside the form ──
         with st.form("record_sale_form", clear_on_submit=True):
-            # Product selector
-            product_options = {
-                f"{r['product_name']} (Stock: {int(r['stock_quantity'])} | ₦{r['selling_price']:,.0f})": r
-                for _, r in available.iterrows()
-            }
-            selected_label = st.selectbox("Select product", list(product_options.keys()))
-            selected_product = product_options[selected_label]
-
-            max_qty = int(selected_product["stock_quantity"])
             quantity = st.number_input(
-                "Quantity", min_value=1, max_value=max_qty,
+                f"Quantity (max {max_qty})",
+                min_value=1, max_value=max_qty,
                 value=1, step=1,
-                help=f"Max available: {max_qty} units"
-            )
-
-            payment_method = st.selectbox(
-                "Payment method", ["Cash", "Bank Transfer", "POS", "Mobile Money"]
             )
 
             # Live calculation display
@@ -1025,7 +1033,7 @@ def page_record_sale():
             st.markdown(f"""
             <div class="kpi-card" style="margin-top:1rem;">
                 <div class="kpi-label">Sale Summary</div>
-                <div style="display:flex; gap:2rem; margin-top:0.5rem;">
+                <div style="display:flex; gap:2rem; margin-top:0.5rem; flex-wrap:wrap;">
                     <div>
                         <div class="kpi-label">Unit Price</div>
                         <div style="font-weight:700;font-size:1.1rem;color:#f1f5f9">{fmt_naira(unit_price)}</div>
@@ -1051,43 +1059,81 @@ def page_record_sale():
             )
 
         if submitted:
-            sale_id  = gen_id("SAL")
-            now_str  = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # Re-read current stock from sheet to avoid race condition with stale cache
+            fresh_products = get_products_df(business_id)
+            fresh_row      = fresh_products[
+                fresh_products["product_id"] == selected_product["product_id"]
+            ]
+            if fresh_row.empty:
+                st.error("Product not found. Please refresh and try again.")
+                return
 
-            # Write sale row
+            current_stock = int(fresh_row.iloc[0]["stock_quantity"])
+            if quantity > current_stock:
+                st.error(
+                    f"Only {current_stock} units available right now. "
+                    f"Please reduce the quantity."
+                )
+                return
+
+            sale_id = gen_id("SAL")
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            # Snapshot values at time of sale
+            snap_unit_price   = safe_float(fresh_row.iloc[0]["selling_price"])
+            snap_cost_price   = safe_float(fresh_row.iloc[0]["cost_price"])
+            snap_total        = snap_unit_price * quantity
+            snap_cost_total   = snap_cost_price * quantity
+            snap_gross_profit = snap_total - snap_cost_total
+
+            # Write sale row — columns must match SALES sheet headers exactly:
+            # sale_id | business_id | product_id | product_name | quantity |
+            # unit_price | total_amount | cost_total | gross_profit |
+            # payment_method | sale_date | recorded_by
             sale_row = [
-                sale_id, business_id,
+                sale_id,
+                business_id,
                 selected_product["product_id"],
                 selected_product["product_name"],
-                quantity, unit_price, total,
-                cost_total, gross_profit,
-                payment_method, now_str,
-                user.get("full_name", user.get("email", ""))
+                int(quantity),
+                snap_unit_price,
+                snap_total,
+                snap_cost_total,
+                snap_gross_profit,
+                payment_method,
+                now_str,
+                user.get("full_name", user.get("email", "")),
             ]
             sale_ok = append_row(SHEET_SALES, sale_row)
 
             if sale_ok:
-                # Deduct stock
-                new_stock = int(selected_product["stock_quantity"]) - quantity
+                # Deduct stock immediately after confirmed write
+                new_stock = current_stock - int(quantity)
                 stock_ok  = update_row_by_id(
                     SHEET_PRODUCTS, "product_id",
                     selected_product["product_id"],
                     {"stock_quantity": new_stock}
                 )
+                # Clear cache so next page load reads fresh data
+                st.cache_data.clear()
+
                 if stock_ok:
                     st.success(
-                        f"✅ Sale recorded! {fmt_naira(total)} | "
+                        f"✅ Sale recorded! {fmt_naira(snap_total)} — "
+                        f"{selected_product['product_name']} × {quantity} | "
                         f"Stock remaining: {new_stock} units"
                     )
                     if new_stock <= safe_int(selected_product["reorder_level"]):
                         st.warning(
-                            f"⚠️ Low stock alert: {selected_product['product_name']} "
+                            f"⚠️ Low stock: {selected_product['product_name']} "
                             f"is at or below reorder level ({safe_int(selected_product['reorder_level'])} units)."
                         )
                 else:
-                    st.warning("Sale recorded but stock update failed. Please update manually.")
+                    st.warning("✅ Sale recorded but stock count failed to update. "
+                               "Please manually adjust stock in Product Management.")
             else:
-                st.error("Failed to record sale. Please try again.")
+                st.error("❌ Failed to write sale to database. Check your Google Sheets "
+                         "connection and that the SALES tab headers match exactly.")
 
     with col2:
         section_header("Today's Sales")
