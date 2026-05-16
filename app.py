@@ -66,7 +66,7 @@ def inject_styles():
     }
 
     /* Hide default Streamlit elements */
-    #MainMenu, footer, header { visibility: hidden; }
+    #MainMenu, footer, { visibility: hidden; }
     .block-container { padding-top: 1.5rem; padding-bottom: 2rem; }
 
     /* ── KPI Cards ── */
