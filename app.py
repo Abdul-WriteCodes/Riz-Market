@@ -12,6 +12,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 import uuid
 import re
+import secrets
+import string
 from datetime import datetime, timedelta
 from dateutil import parser as dateparser
 from google.oauth2.service_account import Credentials
@@ -818,7 +820,11 @@ def page_login():
                     if ok:
                         st.session_state.user         = user
                         st.session_state.logged_in    = True
-                        st.session_state.current_page = "dashboard"
+                        # Force password change if temp password was used
+                        if str(user.get("must_change_password", "")).lower() == "yes":
+                            st.session_state.current_page = "change_password"
+                        else:
+                            st.session_state.current_page = "dashboard"
                         st.rerun()
                     else:
                         st.error(msg)
@@ -1111,6 +1117,75 @@ def page_forgot_password():
             st.rerun()
 
         st.markdown('</div>', unsafe_allow_html=True)
+
+
+
+# ─────────────────────────────────────────────
+#  PAGE: FORCE CHANGE PASSWORD (temp password used)
+# ─────────────────────────────────────────────
+
+def page_change_password(forced=True):
+    inject_styles()
+    user = st.session_state.get("user", {})
+
+    _, col, _ = st.columns([1, 2, 1])
+    with col:
+        if forced:
+            st.markdown(
+                "<div style='text-align:center;font-size:2rem;'>🔐</div>"
+                "<div style='text-align:center;font-size:1.3rem;font-weight:800;"
+                "color:#0f172a;margin-bottom:0.25rem;'>Set your new password</div>"
+                "<div style='text-align:center;color:#64748b;font-size:0.875rem;"
+                "margin-bottom:1.5rem;'>Your account was accessed with a temporary password. "
+                "You must set a permanent password before continuing.</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown("### 🔑 Change Password")
+
+        with st.form("change_pw_form"):
+            if not forced:
+                current_pw = st.text_input("Current password", type="password")
+            new_pw     = st.text_input("New password (min 6 chars)", type="password")
+            confirm_pw = st.text_input("Confirm new password", type="password")
+            submitted  = st.form_submit_button(
+                "Set New Password →", use_container_width=True, type="primary"
+            )
+
+        if submitted:
+            # Verify current password if not forced
+            if not forced:
+                if not check_password(current_pw, str(user.get("password_hash", ""))):
+                    st.error("Current password is incorrect.")
+                    st.stop()
+            if not new_pw or len(new_pw) < 6:
+                st.error("Password must be at least 6 characters.")
+            elif new_pw != confirm_pw:
+                st.error("Passwords do not match.")
+            else:
+                hashed = bcrypt.hashpw(new_pw.encode(), bcrypt.gensalt()).decode()
+                ok = update_row_by_id(
+                    SHEET_USERS, "user_id", user["user_id"],
+                    {
+                        "password_hash":        hashed,
+                        "must_change_password": "no",
+                    }
+                )
+                st.cache_data.clear()
+                if ok:
+                    # Update session so the flag is cleared
+                    st.session_state.user["password_hash"]        = hashed
+                    st.session_state.user["must_change_password"] = "no"
+                    st.success("✅ Password updated successfully!")
+                    st.session_state.current_page = "dashboard"
+                    st.rerun()
+                else:
+                    st.error("Failed to update password. Please try again.")
+
+        if not forced:
+            if st.button("← Back", use_container_width=True):
+                st.session_state.current_page = "dashboard"
+                st.rerun()
 
 
 # ─────────────────────────────────────────────
@@ -2089,44 +2164,53 @@ def page_admin():
                                 f"Requested: {u.get('reset_requested_at', 'unknown')}"
                             )
                         with col2:
-                            new_pw = st.text_input(
-                                "New password",
-                                placeholder="Enter new password",
-                                key=f"newpw_{u['user_id']}",
-                            )
-                            if st.button("✅ Reset Password", key=f"dopw_{u['user_id']}"):
-                                if not new_pw or len(new_pw) < 6:
-                                    st.error("Password must be at least 6 characters.")
-                                else:
-                                    hashed = bcrypt.hashpw(
-                                        new_pw.encode(), bcrypt.gensalt()
-                                    ).decode()
-                                    ok = update_row_by_id(
-                                        SHEET_USERS, "user_id", u["user_id"],
-                                        {
-                                            "password_hash":             hashed,
-                                            "password_reset_requested":  "no",
-                                            "reset_requested_at":        "",
-                                        }
-                                    )
-                                    st.cache_data.clear()
-                                    if ok:
-                                        st.success(
-                                            f"✅ Password reset for {u['email']}. "
-                                            f"Notify them of their new password."
-                                        )
-                                        st.rerun()
-                                    else:
-                                        st.error("Failed to update password. Try again.")
+                            btn_key  = f"genpw_{u['user_id']}"
+                            show_key = f"show_temp_{u['user_id']}"
+
+                            if st.button("🔑 Generate Temp Password", key=btn_key):
+                                # Generate a cryptographically random 10-char password
+                                # Admin never types it — system creates it and shows it once
+                                alphabet = string.ascii_letters + string.digits + "!@#$"
+                                temp_pw  = "".join(secrets.choice(alphabet) for _ in range(10))
+                                hashed   = bcrypt.hashpw(
+                                    temp_pw.encode(), bcrypt.gensalt()
+                                ).decode()
+                                ok = update_row_by_id(
+                                    SHEET_USERS, "user_id", u["user_id"],
+                                    {
+                                        "password_hash":            hashed,
+                                        "password_reset_requested": "no",
+                                        "reset_requested_at":       "",
+                                        "must_change_password":     "yes",
+                                    }
+                                )
+                                st.cache_data.clear()
+                                if ok:
+                                    # Store in session_state so it survives the rerun
+                                    st.session_state[show_key] = temp_pw
+
+                            # Show temp password if just generated — copy and send to user
+                            if show_key in st.session_state:
+                                st.success("✅ Password generated! Send this to the user:")
+                                st.code(st.session_state[show_key], language=None)
+                                st.caption(
+                                    "⚠️ Copy it now — it won't be shown again. "
+                                    "The user will be forced to change it on first login."
+                                )
+                                if st.button("✔ Done — clear", key=f"clear_{u['user_id']}"):
+                                    del st.session_state[show_key]
+                                    st.rerun()
+
                         with col3:
                             if st.button("✖ Dismiss", key=f"dismis_{u['user_id']}"):
                                 update_row_by_id(
                                     SHEET_USERS, "user_id", u["user_id"],
-                                    {"password_reset_requested": "no", "reset_requested_at": ""}
+                                    {"password_reset_requested": "no",
+                                     "reset_requested_at": ""}
                                 )
                                 st.cache_data.clear()
                                 st.rerun()
-                        st.markdown("---")
+                    st.markdown("---")
 
     # ── All Users ──
     with tab4:
@@ -2209,6 +2293,10 @@ def render_sidebar():
                 <div style="font-size:0.7rem;color:#64748b;">{days_left} days remaining</div>
             </div>
             """, unsafe_allow_html=True)
+
+        if st.button("🔑  Change Password", use_container_width=True):
+            st.session_state.current_page = "change_password"
+            st.rerun()
 
         if st.button("🚪  Sign Out", use_container_width=True):
             for key in ["user","logged_in","current_page"]:
@@ -2326,6 +2414,12 @@ def main():
             page_login()
         return
 
+    # ── Logged in: intercept forced password change BEFORE check_access ──
+    if (st.session_state.get("logged_in") and
+            str(st.session_state.get("user", {}).get("must_change_password", "")).lower() == "yes"):
+        page_change_password(forced=True)
+        return
+
     # ── Logged in: check access ──
     if not check_access():
         return
@@ -2334,11 +2428,12 @@ def main():
     render_sidebar()
     page = st.session_state.get("current_page", "dashboard")
 
-    if   page == "dashboard":   page_dashboard()
-    elif page == "record_sale": page_record_sale()
-    elif page == "products":    page_products()
-    elif page == "expenses":    page_expenses()
-    elif page == "insights":    page_insights()
+    if   page == "dashboard":        page_dashboard()
+    elif page == "record_sale":      page_record_sale()
+    elif page == "products":         page_products()
+    elif page == "expenses":         page_expenses()
+    elif page == "insights":         page_insights()
+    elif page == "change_password":  page_change_password(forced=False)
     elif page == "admin":
         if st.session_state.user.get("role") == "admin":
             page_admin()
