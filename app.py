@@ -1100,82 +1100,92 @@ def page_record_sale():
                 f"✅ Record Sale — {fmt_naira(total)}", use_container_width=True, type="primary"
             )
 
-        if submitted:
-            # Re-read current stock from sheet to avoid race condition with stale cache
-            fresh_products = get_products_df(business_id)
-            fresh_row      = fresh_products[
-                fresh_products["product_id"] == selected_product["product_id"]
-            ]
-            if fresh_row.empty:
-                st.error("Product not found. Please refresh and try again.")
-                return
+            # ── FIX: if submitted MUST be inside the with st.form block ──
+            # When clear_on_submit=True, Streamlit resets form state on rerun.
+            # If this block were outside the form, submitted would always be
+            # False by the time the code reaches it, silently skipping the write.
+            if submitted:
+                # Read product + payment from session_state — these widgets live
+                # outside the form, so their values are stable at submit time.
+                _label   = st.session_state.get("sale_product_select", selected_label)
+                _product = product_options.get(_label, selected_product)
+                _payment = st.session_state.get("sale_payment_method", payment_method)
 
-            current_stock = int(fresh_row.iloc[0]["stock_quantity"])
-            if quantity > current_stock:
-                st.error(
-                    f"Only {current_stock} units available right now. "
-                    f"Please reduce the quantity."
-                )
-                return
+                # Re-read current stock from sheet to avoid race condition with stale cache
+                fresh_products = get_products_df(business_id)
+                fresh_row      = fresh_products[
+                    fresh_products["product_id"] == _product["product_id"]
+                ]
+                if fresh_row.empty:
+                    st.error("Product not found. Please refresh and try again.")
+                    st.stop()
 
-            sale_id = gen_id("SAL")
-            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-            # Snapshot values at time of sale
-            snap_unit_price   = safe_float(fresh_row.iloc[0]["selling_price"])
-            snap_cost_price   = safe_float(fresh_row.iloc[0]["cost_price"])
-            snap_total        = snap_unit_price * quantity
-            snap_cost_total   = snap_cost_price * quantity
-            snap_gross_profit = snap_total - snap_cost_total
-
-            # Write sale row — columns must match SALES sheet headers exactly:
-            # sale_id | business_id | product_id | product_name | quantity |
-            # unit_price | total_amount | cost_total | gross_profit |
-            # payment_method | sale_date | recorded_by
-            sale_row = [
-                sale_id,
-                business_id,
-                selected_product["product_id"],
-                selected_product["product_name"],
-                int(quantity),
-                snap_unit_price,
-                snap_total,
-                snap_cost_total,
-                snap_gross_profit,
-                payment_method,
-                now_str,
-                user.get("full_name", user.get("email", "")),
-            ]
-            sale_ok = append_row(SHEET_SALES, sale_row)
-
-            if sale_ok:
-                # Deduct stock immediately after confirmed write
-                new_stock = current_stock - int(quantity)
-                stock_ok  = update_row_by_id(
-                    SHEET_PRODUCTS, "product_id",
-                    selected_product["product_id"],
-                    {"stock_quantity": new_stock}
-                )
-                # Clear cache so next page load reads fresh data
-                st.cache_data.clear()
-
-                if stock_ok:
-                    st.success(
-                        f"✅ Sale recorded! {fmt_naira(snap_total)} — "
-                        f"{selected_product['product_name']} × {quantity} | "
-                        f"Stock remaining: {new_stock} units"
+                current_stock = int(fresh_row.iloc[0]["stock_quantity"])
+                if quantity > current_stock:
+                    st.error(
+                        f"Only {current_stock} units available right now. "
+                        f"Please reduce the quantity."
                     )
-                    if new_stock <= safe_int(selected_product["reorder_level"]):
-                        st.warning(
-                            f"⚠️ Low stock: {selected_product['product_name']} "
-                            f"is at or below reorder level ({safe_int(selected_product['reorder_level'])} units)."
+                    st.stop()
+
+                sale_id = gen_id("SAL")
+                now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                # Snapshot values at time of sale
+                snap_unit_price   = safe_float(fresh_row.iloc[0]["selling_price"])
+                snap_cost_price   = safe_float(fresh_row.iloc[0]["cost_price"])
+                snap_total        = snap_unit_price * quantity
+                snap_cost_total   = snap_cost_price * quantity
+                snap_gross_profit = snap_total - snap_cost_total
+
+                # Write sale row — columns must match SALES sheet headers exactly:
+                # sale_id | business_id | product_id | product_name | quantity |
+                # unit_price | total_amount | cost_total | gross_profit |
+                # payment_method | sale_date | recorded_by
+                sale_row = [
+                    sale_id,
+                    business_id,
+                    _product["product_id"],
+                    _product["product_name"],
+                    int(quantity),
+                    snap_unit_price,
+                    snap_total,
+                    snap_cost_total,
+                    snap_gross_profit,
+                    _payment,
+                    now_str,
+                    user.get("full_name", user.get("email", "")),
+                ]
+                sale_ok = append_row(SHEET_SALES, sale_row)
+
+                if sale_ok:
+                    # Deduct stock immediately after confirmed write
+                    new_stock = current_stock - int(quantity)
+                    stock_ok  = update_row_by_id(
+                        SHEET_PRODUCTS, "product_id",
+                        _product["product_id"],
+                        {"stock_quantity": new_stock}
+                    )
+                    # Clear cache so next page load reads fresh data
+                    st.cache_data.clear()
+
+                    if stock_ok:
+                        st.success(
+                            f"✅ Sale recorded! {fmt_naira(snap_total)} — "
+                            f"{_product['product_name']} × {quantity} | "
+                            f"Stock remaining: {new_stock} units"
                         )
+                        if new_stock <= safe_int(_product["reorder_level"]):
+                            st.warning(
+                                f"⚠️ Low stock: {_product['product_name']} "
+                                f"is at or below reorder level ({safe_int(_product['reorder_level'])} units)."
+                            )
+                    else:
+                        st.warning("✅ Sale recorded but stock count failed to update. "
+                                   "Please manually adjust stock in Product Management.")
                 else:
-                    st.warning("✅ Sale recorded but stock count failed to update. "
-                               "Please manually adjust stock in Product Management.")
-            else:
-                st.error("❌ Failed to write sale to database. Check your Google Sheets "
-                         "connection and that the SALES tab headers match exactly.")
+                    st.error("❌ Failed to write sale to database. Check your Google Sheets "
+                             "connection and that the SALES tab headers match exactly.")
 
     with col2:
         section_header("Today's Sales")
