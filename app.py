@@ -991,77 +991,58 @@ def page_pending_payment():
                else PAYMENT_DETAILS["flutterwave_monthly"])
     savings_note = " — save ₦3,000!" if plan == "yearly" else ""
 
-    st.markdown("""
-    <div style="max-width:600px;margin:2rem auto;">
-        <div style="text-align:center;margin-bottom:1.5rem;">
-            <div style="font-size:2rem;font-weight:800;color:#0f172a;">📊 BizPulse</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    _, col, _ = st.columns([1, 2, 1])
+    with col:
+        st.markdown(
+            "<div style='text-align:center;font-size:2rem;font-weight:800;"
+            "color:#0f172a;margin-bottom:0.25rem;'>📊 BizPulse</div>",
+            unsafe_allow_html=True,
+        )
 
-    st.markdown(f"""
-    <div style="max-width:600px;margin:0 auto;background:white;border-radius:20px;
-                padding:2.5rem;box-shadow:0 20px 60px rgba(0,0,0,0.08);
-                border:1px solid #e2e8f0;text-align:center;">
+        st.markdown("---")
+        st.markdown(
+            "<div style='text-align:center;font-size:2.5rem;'>🎉</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<div style='text-align:center;font-size:1.4rem;font-weight:800;"
+            "color:#0f172a;margin-bottom:0.25rem;'>Account created!</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<div style='text-align:center;color:#64748b;font-size:0.9rem;"
+            "margin-bottom:1rem;'>One last step — complete your payment to activate "
+            "full access.</div>",
+            unsafe_allow_html=True,
+        )
 
-        <div style="font-size:3rem;margin-bottom:0.5rem;">🎉</div>
-        <div style="font-size:1.5rem;font-weight:800;color:#0f172a;margin-bottom:0.5rem;">
-            Account created!
-        </div>
-        <div style="color:#64748b;font-size:0.95rem;margin-bottom:2rem;">
-            One last step — complete your payment to activate full access.
-        </div>
+        # Summary box using native elements
+        with st.container(border=True):
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("**Plan**")
+                st.markdown("**Amount**")
+                st.markdown("**Email**")
+            with c2:
+                st.markdown(f":{plan.capitalize()}{savings_note}")
+                st.markdown(f"**₦{amount:,}**")
+                st.markdown(f"`{email}`")
 
-        <div style="background:#f8fafc;border-radius:14px;padding:1.5rem;
-                    border:1px solid #e2e8f0;margin-bottom:1.75rem;text-align:left;">
-            <div style="display:flex;justify-content:space-between;align-items:center;
-                        margin-bottom:0.75rem;">
-                <span style="font-weight:600;color:#334155;">Plan</span>
-                <span style="font-weight:700;color:#6366f1;">
-                    {plan.capitalize()}{savings_note}
-                </span>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;
-                        margin-bottom:0.75rem;">
-                <span style="font-weight:600;color:#334155;">Amount</span>
-                <span style="font-weight:800;font-size:1.3rem;color:#0f172a;">
-                    ₦{amount:,}
-                </span>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-                <span style="font-weight:600;color:#334155;">Email</span>
-                <span style="color:#475569;font-size:0.875rem;">{email}</span>
-            </div>
-        </div>
+        st.caption("🔒 Secure payment via Flutterwave. Your account will be "
+                   "activated within **24 hours** after payment is confirmed.")
 
-        <div style="font-size:0.82rem;color:#94a3b8;margin-bottom:1.5rem;">
-            🔒 Secure payment via Flutterwave. Your account will be activated
-            within <strong>24 hours</strong> after payment is confirmed.
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Centred pay button
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
         st.link_button(
             f"💳 Pay ₦{amount:,} via Flutterwave →",
             url=fw_link,
             use_container_width=True,
             type="primary",
         )
-        st.markdown("<div style='margin-top:0.75rem;'></div>", unsafe_allow_html=True)
         if st.button("← Back to Sign In", use_container_width=True):
             st.session_state.current_page = "login"
             st.rerun()
 
-    st.markdown("""
-    <div style="max-width:600px;margin:1.5rem auto;text-align:center;
-                font-size:0.8rem;color:#94a3b8;">
-        Already paid? Your account will be activated shortly.
-        Contact support if you don't hear back within 24 hours.
-    </div>
-    """, unsafe_allow_html=True)
+        st.caption("Already paid? Your account will be activated shortly. "
+                   "Contact support if you don't hear back within 24 hours.")
 
 
 
