@@ -1044,10 +1044,15 @@ def page_record_sale():
 
         # ── Only quantity + submit inside the form ──
         with st.form("record_sale_form", clear_on_submit=True):
+            # Key is required so we can read the submitted value from
+            # st.session_state — clear_on_submit resets the widget to value=1
+            # on the rerun AFTER submit, but session_state still holds the
+            # value that was present at the moment the button was clicked.
             quantity = st.number_input(
                 f"Quantity (max {max_qty} available)",
                 min_value=1,
                 value=1, step=1,
+                key="sale_quantity",
             )
 
             # Live calculation display
@@ -1085,16 +1090,15 @@ def page_record_sale():
                 f"✅ Record Sale — {fmt_naira(total)}", use_container_width=True, type="primary"
             )
 
-            # ── FIX: if submitted MUST be inside the with st.form block ──
-            # When clear_on_submit=True, Streamlit resets form state on rerun.
-            # If this block were outside the form, submitted would always be
-            # False by the time the code reaches it, silently skipping the write.
             if submitted:
-                # Read product + payment from session_state — these widgets live
-                # outside the form, so their values are stable at submit time.
-                _label   = st.session_state.get("sale_product_select", selected_label)
-                _product = product_options.get(_label, selected_product)
-                _payment = st.session_state.get("sale_payment_method", payment_method)
+                # Read ALL widget values from session_state at the moment of
+                # submission. clear_on_submit resets the widgets visually on
+                # the next rerun, but session_state retains the submitted values
+                # throughout the current execution — so this is always correct.
+                _label    = st.session_state.get("sale_product_select", selected_label)
+                _product  = product_options.get(_label, selected_product)
+                _payment  = st.session_state.get("sale_payment_method", payment_method)
+                _quantity = int(st.session_state.get("sale_quantity", quantity))
 
                 # Re-read current stock from sheet to avoid race condition with stale cache
                 fresh_products = get_products_df(business_id)
@@ -1106,7 +1110,7 @@ def page_record_sale():
                     st.stop()
 
                 current_stock = int(fresh_row.iloc[0]["stock_quantity"])
-                if quantity > current_stock:
+                if _quantity > current_stock:
                     st.error(
                         f"Only {current_stock} units available right now. "
                         f"Please reduce the quantity."
@@ -1119,8 +1123,8 @@ def page_record_sale():
                 # Snapshot values at time of sale
                 snap_unit_price   = safe_float(fresh_row.iloc[0]["selling_price"])
                 snap_cost_price   = safe_float(fresh_row.iloc[0]["cost_price"])
-                snap_total        = snap_unit_price * quantity
-                snap_cost_total   = snap_cost_price * quantity
+                snap_total        = snap_unit_price * _quantity
+                snap_cost_total   = snap_cost_price * _quantity
                 snap_gross_profit = snap_total - snap_cost_total
 
                 # Write sale row — columns must match SALES sheet headers exactly:
@@ -1132,7 +1136,7 @@ def page_record_sale():
                     business_id,
                     _product["product_id"],
                     _product["product_name"],
-                    int(quantity),
+                    _quantity,
                     snap_unit_price,
                     snap_total,
                     snap_cost_total,
@@ -1145,7 +1149,7 @@ def page_record_sale():
 
                 if sale_ok:
                     # Deduct stock immediately after confirmed write
-                    new_stock = current_stock - int(quantity)
+                    new_stock = current_stock - _quantity
                     stock_ok  = update_row_by_id(
                         SHEET_PRODUCTS, "product_id",
                         _product["product_id"],
@@ -1157,7 +1161,7 @@ def page_record_sale():
                     if stock_ok:
                         st.success(
                             f"✅ Sale recorded! {fmt_naira(snap_total)} — "
-                            f"{_product['product_name']} × {quantity} | "
+                            f"{_product['product_name']} × {_quantity} | "
                             f"Stock remaining: {new_stock} units"
                         )
                         if new_stock <= safe_int(_product["reorder_level"]):
