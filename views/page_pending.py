@@ -76,7 +76,7 @@ def page_pending_payment():
             type="primary",
         )
         if st.button("← Back to Sign In", use_container_width=True):
-            st.session_state.current_page = "login"
+            st.session_state.auth_page = "login"
             st.rerun()
 
         st.caption("Already paid? Your account will be activated shortly. "
