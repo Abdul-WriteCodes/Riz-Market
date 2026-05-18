@@ -48,7 +48,7 @@ def page_pending_payment():
             unsafe_allow_html=True,
         )
         st.markdown(
-            "<div style='text-align:center;color:#64748b;font-size:0.9rem;"
+            "<div style='text-align:center;color:#22c55e;font-size:0.9rem;"
             "margin-bottom:1rem;'>One last step — complete your payment to activate "
             "full access.</div>",
             unsafe_allow_html=True,
