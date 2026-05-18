@@ -14,9 +14,6 @@ import bcrypt
 import re
 import io
 import urllib.parse
-import string
-import secrets
-import bcrypt
 
 
 def page_admin():
@@ -715,4 +712,3 @@ def page_admin():
 # ─────────────────────────────────────────────
 #  SIDEBAR NAVIGATION
 # ─────────────────────────────────────────────
-
