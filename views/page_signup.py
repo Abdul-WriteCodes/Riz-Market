@@ -160,14 +160,12 @@ font-size:0.78rem;color:#8BA0B8;
             if ok:
                 if _plan == "trial":
                     st.success("🎉 Your 14-day free trial is active! Sign in to get started.")
-                    if st.button("Go to Sign In →"):
-                        st.session_state.auth_page = "login"
-                        st.session_state.pop("user", None)
-                        st.rerun()
+                    st.session_state.auth_page = "login"
+                    st.rerun()
                 else:
                     st.session_state.pending_email = email.strip()
                     st.session_state.pending_plan  = _plan
-                    st.session_state.current_page  = "pending_payment"
+                    st.session_state.auth_page     = "pending"
                     st.rerun()
             else:
                 st.error(msg)
