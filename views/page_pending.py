@@ -19,7 +19,8 @@ import urllib.parse
 def page_pending_payment():
     inject_styles()
     user   = st.session_state.get("user", {})
-    plan   = user.get("plan_type") or st.session_state.get("pending_plan", "monthly")
+    #plan   = user.get("plan_type") or st.session_state.get("pending_plan", "monthly")
+    plan = (user or {}).get("plan_type") or st.session_state.get("pending_plan", "monthly")
     email  = user.get("email")    or st.session_state.get("pending_email", "")
     amount = (PAYMENT_DETAILS["yearly_price"]
               if plan == "yearly"
