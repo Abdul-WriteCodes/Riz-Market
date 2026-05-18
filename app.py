@@ -42,9 +42,10 @@ def main():
     # Unauthenticated routes
     if user is None:
         page = st.session_state.get("auth_page", "login")
-        if   page == "login":   page_login()
-        elif page == "signup":  page_signup()
-        elif page == "forgot":  page_forgot_password()
+        if   page == "login":    page_login()
+        elif page == "signup":   page_signup()
+        elif page == "forgot":   page_forgot_password()
+        elif page == "pending":  page_pending_payment()
         return
 
     # Force password change
