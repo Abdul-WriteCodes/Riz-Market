@@ -15,7 +15,7 @@ import re
 import io
 import urllib.parse
 
-
+"""
 def page_pending_payment():
     inject_styles()
     user   = st.session_state.get("user", {})
@@ -27,6 +27,29 @@ def page_pending_payment():
     fw_link = (PAYMENT_DETAILS["flutterwave_yearly"]
                if plan == "yearly"
                else PAYMENT_DETAILS["flutterwave_monthly"])
+    savings_note = " — save ₦3,000!" if plan == "yearly" else ""
+"""
+def page_pending_payment():
+    inject_styles()
+
+    user = st.session_state.get("user") or {}
+
+    plan = user.get("plan_type") or st.session_state.get("pending_plan", "monthly")
+
+    email = user.get("email") or st.session_state.get("pending_email", "")
+
+    amount = (
+        PAYMENT_DETAILS["yearly_price"]
+        if plan == "yearly"
+        else PAYMENT_DETAILS["monthly_price"]
+    )
+
+    fw_link = (
+        PAYMENT_DETAILS["flutterwave_yearly"]
+        if plan == "yearly"
+        else PAYMENT_DETAILS["flutterwave_monthly"]
+    )
+
     savings_note = " — save ₦3,000!" if plan == "yearly" else ""
 
     _, col, _ = st.columns([1, 2, 1])
