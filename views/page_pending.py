@@ -20,7 +20,6 @@ def page_pending_payment():
     inject_styles()
     user   = st.session_state.get("user", {})
     plan   = user.get("plan_type") or st.session_state.get("pending_plan", "monthly")
-    #plan = (user or {}).get("plan_type") or st.session_state.get("pending_plan", "monthly")
     email  = user.get("email")    or st.session_state.get("pending_email", "")
     amount = (PAYMENT_DETAILS["yearly_price"]
               if plan == "yearly"
@@ -34,8 +33,8 @@ def page_pending_payment():
     with col:
         st.markdown(
             "<div style='text-align:center;font-size:2rem;font-weight:800;"
-            "color:#0f172a;margin-bottom:0.25rem;'>📊 BizPulse</div>",
-            #"color:#d4af37;margin-bottom:0.25rem;'>📊 BizPulse</div>",
+            #"color:#0f172a;margin-bottom:0.25rem;'>📊 BizPulse</div>",
+            "color:#d4af37;margin-bottom:0.25rem;'>📊 BizPulse</div>",
             unsafe_allow_html=True,
         )
 
