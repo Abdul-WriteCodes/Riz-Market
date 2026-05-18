@@ -86,6 +86,7 @@ all in one dashboard designed for the way Nigerian businesses actually work.
                 else:
                     st.error(msg)
 
+        # ── Navigation buttons — outside form ──
         col_a, col_b = st.columns(2)
         with col_a:
             if st.button("Forgot password?", key="goto_forgot",
@@ -113,4 +114,3 @@ all in one dashboard designed for the way Nigerian businesses actually work.
 # ─────────────────────────────────────────────
 #  PAGE: SIGNUP
 # ─────────────────────────────────────────────
-
