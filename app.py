@@ -1,6 +1,3 @@
-# Rice Market — Streamlit MVP (Single File App)
-
-```python
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -8,18 +5,18 @@ import uuid
 import gspread
 from google.oauth2.service_account import Credentials
 
-# =========================================================
+# ======================================================
 # PAGE CONFIG
-# =========================================================
+# ======================================================
 st.set_page_config(
     page_title="Rice Market",
     page_icon="🌾",
     layout="wide"
 )
 
-# =========================================================
-# STYLING
-# =========================================================
+# ======================================================
+# CUSTOM STYLING
+# ======================================================
 st.markdown(
     """
     <style>
@@ -27,117 +24,93 @@ st.markdown(
         background-color: #f8fafc;
     }
 
-    .metric-card {
-        background: white;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-        text-align: center;
-    }
-
-    .title {
-        font-size: 2.5rem;
+    .stButton > button {
+        width: 100%;
+        border-radius: 10px;
+        height: 45px;
+        background-color: #166534;
+        color: white;
+        border: none;
         font-weight: bold;
-        color: #166534;
     }
 
-    .subtitle {
-        color: #475569;
-        margin-bottom: 30px;
+    .stButton > button:hover {
+        background-color: #14532d;
+        color: white;
     }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# =========================================================
+# ======================================================
 # GOOGLE SHEETS CONNECTION
-# =========================================================
-def connect_gsheet():
+# ======================================================
+@st.cache_resource
+def connect_google_sheet():
+
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
 
-    creds = Credentials.from_service_account_info(
+    credentials = Credentials.from_service_account_info(
         st.secrets["gcp_service_account"],
         scopes=scopes
     )
 
-    client = gspread.authorize(creds)
-    sheet = client.open(st.secrets["sheet_name"])
+    client = gspread.authorize(credentials)
 
-    return sheet
+    spreadsheet = client.open(st.secrets["sheet_name"])
+
+    return spreadsheet
 
 
-sheet = connect_gsheet()
+sheet = connect_google_sheet()
 
+# ======================================================
+# WORKSHEETS
+# ======================================================
+users_ws = sheet.worksheet("users")
 inventory_ws = sheet.worksheet("inventory")
 orders_ws = sheet.worksheet("orders")
-hubs_ws = sheet.worksheet("pickup_hubs")
+pickup_ws = sheet.worksheet("pickup_hubs")
 
-# =========================================================
+# ======================================================
 # LOAD DATA
-# =========================================================
-def load_inventory():
-    data = inventory_ws.get_all_records()
+# ======================================================
+def load_data(worksheet):
+    data = worksheet.get_all_records()
     return pd.DataFrame(data)
 
 
-def load_orders():
-    data = orders_ws.get_all_records()
-    return pd.DataFrame(data)
+users_df = load_data(users_ws)
+inventory_df = load_data(inventory_ws)
+orders_df = load_data(orders_ws)
+pickup_df = load_data(pickup_ws)
 
-
-def load_hubs():
-    data = hubs_ws.get_all_records()
-    return pd.DataFrame(data)
-
-
-inventory_df = load_inventory()
-orders_df = load_orders()
-hubs_df = load_hubs()
-
-# =========================================================
-# AUTHENTICATION
-# =========================================================
-def load_users():
-    try:
-        users_ws = sheet.worksheet("users")
-        data = users_ws.get_all_records()
-        return pd.DataFrame(data), users_ws
-    except:
-        users_ws = sheet.add_worksheet(title="users", rows=1000, cols=10)
-
-        users_ws.append_row([
-            "user_id",
-            "full_name",
-            "email",
-            "phone",
-            "password",
-            "created_at"
-        ])
-
-        return pd.DataFrame(), users_ws
-
-
-users_df, users_ws = load_users()
-
+# ======================================================
+# SESSION STATE
+# ======================================================
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
 if "user_email" not in st.session_state:
-    st.session_state.user_email = None
+    st.session_state.user_email = ""
 
-
+# ======================================================
+# AUTH FUNCTIONS
+# ======================================================
 def register_user(full_name, email, phone, password):
 
-    existing = users_df[
-        users_df["email"].astype(str).str.lower() == email.lower()
-    ]
+    if not users_df.empty:
 
-    if not existing.empty:
-        return False, "Email already exists"
+        existing = users_df[
+            users_df["email"].astype(str).str.lower() == email.lower()
+        ]
+
+        if not existing.empty:
+            return False, "Email already exists"
 
     user_id = str(uuid.uuid4())[:8]
 
@@ -166,55 +139,20 @@ def login_user(email, password):
 
     return not result.empty
 
-
-# =========================================================
-# SIDEBAR
-# =========================================================
-st.sidebar.title("🌾 Rice Market")
-
+# ======================================================
+# AUTH SCREEN
+# ======================================================
 if not st.session_state.logged_in:
 
-    auth_option = st.sidebar.selectbox(
-        "Authentication",
-        ["Login", "Register"]
-    )
+    st.title("🌾 Rice Market")
+    st.caption("Transparent Rice Pricing & Strategic Pickup Platform")
 
-    # =============================================
-    # REGISTER
-    # =============================================
-    if auth_option == "Register":
+    auth_tab1, auth_tab2 = st.tabs(["Login", "Register"])
 
-        st.title("📝 Create Account")
-
-        with st.form("register_form"):
-
-            full_name = st.text_input("Full Name")
-            email = st.text_input("Email")
-            phone = st.text_input("Phone")
-            password = st.text_input("Password", type="password")
-
-            register_btn = st.form_submit_button("Register")
-
-            if register_btn:
-
-                success, message = register_user(
-                    full_name,
-                    email,
-                    phone,
-                    password
-                )
-
-                if success:
-                    st.success(message)
-                else:
-                    st.error(message)
-
-    # =============================================
+    # ==================================================
     # LOGIN
-    # =============================================
-    else:
-
-        st.title("🔐 Login")
+    # ==================================================
+    with auth_tab1:
 
         with st.form("login_form"):
 
@@ -233,15 +171,47 @@ if not st.session_state.logged_in:
                     st.success("Login successful")
                     st.rerun()
                 else:
-                    st.error("Invalid email or password")
+                    st.error("Invalid credentials")
+
+    # ==================================================
+    # REGISTER
+    # ==================================================
+    with auth_tab2:
+
+        with st.form("register_form"):
+
+            full_name = st.text_input("Full Name")
+            email = st.text_input("Email")
+            phone = st.text_input("Phone Number")
+            password = st.text_input("Password", type="password")
+
+            register_btn = st.form_submit_button("Register")
+
+            if register_btn:
+
+                success, message = register_user(
+                    full_name,
+                    email,
+                    phone,
+                    password
+                )
+
+                if success:
+                    st.success(message)
+                else:
+                    st.error(message)
 
     st.stop()
 
-st.sidebar.success(f"Logged in: {st.session_state.user_email}")
+# ======================================================
+# SIDEBAR
+# ======================================================
+st.sidebar.title("🌾 Rice Market")
+st.sidebar.success(f"Logged in as: {st.session_state.user_email}")
 
 if st.sidebar.button("Logout"):
     st.session_state.logged_in = False
-    st.session_state.user_email = None
+    st.session_state.user_email = ""
     st.rerun()
 
 page = st.sidebar.radio(
@@ -255,53 +225,47 @@ page = st.sidebar.radio(
     ]
 )
 
-# =========================================================
+# ======================================================
 # HOME PAGE
-# =========================================================
+# ======================================================
 if page == "Home":
 
-    st.markdown('<div class="title">Rice Market</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="subtitle">Transparent Rice Pricing & Strategic Pickup Marketplace</div>',
-        unsafe_allow_html=True
-    )
-
-    total_products = len(inventory_df)
-    total_orders = len(orders_df)
-    total_hubs = len(hubs_df)
+    st.title("🌾 Rice Market")
+    st.caption("Buy Rice At Transparent Market Prices")
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.metric("Rice Products", total_products)
+        st.metric("Rice Products", len(inventory_df))
 
     with col2:
-        st.metric("Orders", total_orders)
+        st.metric("Orders", len(orders_df))
 
     with col3:
-        st.metric("Pickup Hubs", total_hubs)
+        st.metric("Pickup Hubs", len(pickup_df))
 
     st.markdown("---")
 
     st.subheader("Available Rice Products")
 
-    if not inventory_df.empty:
-        st.dataframe(inventory_df, use_container_width=True)
-    else:
+    if inventory_df.empty:
         st.warning("No inventory available")
+    else:
+        st.dataframe(inventory_df, use_container_width=True)
 
-# =========================================================
+# ======================================================
 # MARKET PRICES
-# =========================================================
+# ======================================================
 elif page == "Market Prices":
 
-    st.title("📈 Current Market Prices")
+    st.title("📈 Current Rice Prices")
 
     if inventory_df.empty:
         st.warning("No inventory data available")
+
     else:
 
-        search = st.text_input("Search rice type")
+        search = st.text_input("Search Rice")
 
         filtered_df = inventory_df.copy()
 
@@ -312,21 +276,19 @@ elif page == "Market Prices":
 
         st.dataframe(filtered_df, use_container_width=True)
 
-# =========================================================
+# ======================================================
 # PLACE ORDER
-# =========================================================
+# ======================================================
 elif page == "Place Order":
 
     st.title("🛒 Place Order")
 
     if inventory_df.empty:
-        st.warning("No products available")
+        st.warning("No rice products available")
+
     else:
 
         with st.form("order_form"):
-
-            customer_name = st.text_input("Full Name")
-            phone = st.text_input("Phone Number")
 
             rice_options = inventory_df["rice_name"].tolist()
             selected_rice = st.selectbox("Select Rice", rice_options)
@@ -337,108 +299,107 @@ elif page == "Place Order":
                 value=1
             )
 
-            pickup_options = hubs_df["hub_name"].tolist()
-            pickup_hub = st.selectbox("Pickup Location", pickup_options)
+            pickup_options = pickup_df["hub_name"].tolist()
+            selected_hub = st.selectbox(
+                "Pickup Hub",
+                pickup_options
+            )
 
             payment_method = st.selectbox(
                 "Payment Method",
-                ["Bank Transfer", "Cash", "Pay on Pickup"]
+                ["Bank Transfer", "Cash", "Pay On Pickup"]
             )
 
-            submit = st.form_submit_button("Place Order")
+            submit_order = st.form_submit_button("Place Order")
 
-            if submit:
+            if submit_order:
 
                 selected_row = inventory_df[
                     inventory_df["rice_name"] == selected_rice
                 ].iloc[0]
 
                 unit_price = float(selected_row["price_per_bag"])
-                total_amount = quantity * unit_price
+                total_amount = unit_price * quantity
 
                 order_id = str(uuid.uuid4())[:8]
 
-                created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
                 new_order = [
                     order_id,
-                    customer_name,
-                    phone,
+                    st.session_state.user_email,
                     selected_rice,
                     quantity,
-                    pickup_hub,
+                    selected_hub,
                     payment_method,
                     total_amount,
                     "Pending",
                     "Pending",
-                    created_at
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ]
 
                 orders_ws.append_row(new_order)
 
-                st.success("Order placed successfully!")
-
+                st.success("Order placed successfully")
                 st.info(f"Order ID: {order_id}")
                 st.info(f"Total Amount: ₦{total_amount:,.0f}")
 
-# =========================================================
+# ======================================================
 # TRACK ORDERS
-# =========================================================
+# ======================================================
 elif page == "Track Orders":
 
     st.title("📦 Track Orders")
 
-    order_search = st.text_input("Enter Order ID")
+    if orders_df.empty:
+        st.warning("No orders available")
 
-    if order_search:
+    else:
 
-        result = orders_df[
-            orders_df["order_id"].astype(str) == order_search
+        user_orders = orders_df[
+            orders_df["customer_email"].astype(str) == st.session_state.user_email
         ]
 
-        if result.empty:
-            st.error("Order not found")
+        if user_orders.empty:
+            st.info("You have no orders yet")
         else:
-            st.success("Order Found")
-            st.dataframe(result, use_container_width=True)
+            st.dataframe(user_orders, use_container_width=True)
 
-# =========================================================
+# ======================================================
 # ADMIN DASHBOARD
-# =========================================================
+# ======================================================
 elif page == "Admin Dashboard":
 
     st.title("⚙️ Admin Dashboard")
 
     admin_password = st.text_input(
-        "Enter Admin Password",
+        "Admin Password",
         type="password"
     )
 
     if admin_password == st.secrets["admin_password"]:
 
-        tabs = st.tabs([
+        admin_tab1, admin_tab2, admin_tab3 = st.tabs([
             "Inventory",
             "Orders",
             "Pickup Hubs"
         ])
 
-        # =============================================
-        # INVENTORY TAB
-        # =============================================
-        with tabs[0]:
+        # ==================================================
+        # INVENTORY
+        # ==================================================
+        with admin_tab1:
 
-            st.subheader("Inventory Management")
-
+            st.subheader("Inventory")
             st.dataframe(inventory_df, use_container_width=True)
 
             st.markdown("---")
-            st.subheader("Add New Rice Product")
+            st.subheader("Add New Product")
 
             with st.form("inventory_form"):
 
                 rice_id = str(uuid.uuid4())[:6]
 
                 rice_name = st.text_input("Rice Name")
+
                 category = st.selectbox(
                     "Category",
                     ["Local", "Imported", "Premium"]
@@ -456,9 +417,9 @@ elif page == "Admin Dashboard":
 
                 location = st.text_input("Location")
 
-                submit_inventory = st.form_submit_button("Add Product")
+                add_product = st.form_submit_button("Add Product")
 
-                if submit_inventory:
+                if add_product:
 
                     inventory_ws.append_row([
                         rice_id,
@@ -472,23 +433,21 @@ elif page == "Admin Dashboard":
 
                     st.success("Product added successfully")
 
-        # =============================================
-        # ORDERS TAB
-        # =============================================
-        with tabs[1]:
+        # ==================================================
+        # ORDERS
+        # ==================================================
+        with admin_tab2:
 
             st.subheader("Orders")
-
             st.dataframe(orders_df, use_container_width=True)
 
-        # =============================================
-        # HUBS TAB
-        # =============================================
-        with tabs[2]:
+        # ==================================================
+        # PICKUP HUBS
+        # ==================================================
+        with admin_tab3:
 
             st.subheader("Pickup Hubs")
-
-            st.dataframe(hubs_df, use_container_width=True)
+            st.dataframe(pickup_df, use_container_width=True)
 
             st.markdown("---")
             st.subheader("Add Pickup Hub")
@@ -503,11 +462,11 @@ elif page == "Admin Dashboard":
                 contact_person = st.text_input("Contact Person")
                 phone = st.text_input("Phone")
 
-                submit_hub = st.form_submit_button("Add Hub")
+                add_hub = st.form_submit_button("Add Hub")
 
-                if submit_hub:
+                if add_hub:
 
-                    hubs_ws.append_row([
+                    pickup_ws.append_row([
                         hub_id,
                         hub_name,
                         address,
@@ -519,188 +478,4 @@ elif page == "Admin Dashboard":
                     st.success("Pickup hub added successfully")
 
     else:
-        st.warning("Enter admin password to continue")
-```
-
----
-
-# Requirements.txt
-
-```txt
-streamlit
-pandas
-gspread
-google-auth
-```
-
----
-
-# Google Sheet Setup
-
-Create ONE Google Sheet called:
-
-```txt
-RiceMarketDB
-```
-
-Create these worksheets inside it:
-
-## 1. users
-
-```txt
-user_id
-full_name
-email
-phone
-password
-created_at
-```
-
----
-
-## 2. inventory
-
-```txt
-rice_id
-rice_name
-category
-price_per_bag
-available_quantity
-location
-updated_at
-```
-
----
-
-## 3. orders
-
-```txt
-order_id
-customer_name
-phone
-rice_name
-quantity
-pickup_hub
-payment_method
-total_amount
-payment_status
-order_status
-created_at
-```
-
----
-
-## 4. pickup_hubs
-
-```txt
-hub_id
-hub_name
-address
-city
-contact_person
-phone
-```
-
----
-
-# Streamlit Secrets Setup
-
-Create:
-
-```txt
-.streamlit/secrets.toml
-```
-
-Add:
-
-```toml
-admin_password = "admin123"
-sheet_name = "RiceMarketDB"
-
-[gcp_service_account]
-type = "service_account"
-project_id = "YOUR_PROJECT_ID"
-private_key_id = "YOUR_PRIVATE_KEY_ID"
-private_key = "YOUR_PRIVATE_KEY"
-client_email = "YOUR_CLIENT_EMAIL"
-client_id = "YOUR_CLIENT_ID"
-auth_uri = "https://accounts.google.com/o/oauth2/auth"
-token_uri = "https://oauth2.googleapis.com/token"
-auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
-client_x509_cert_url = "YOUR_CERT_URL"
-```
-
----
-
-# Deployment Steps
-
-## Step 1
-
-Push code to GitHub.
-
----
-
-## Step 2
-
-Go to:
-
-```txt
-https://share.streamlit.io
-```
-
----
-
-## Step 3
-
-Connect GitHub repo.
-
----
-
-## Step 4
-
-Deploy app.
-
----
-
-## Step 5
-
-Add secrets in Streamlit Cloud:
-
-```txt
-App Settings → Secrets
-```
-
-Paste your secrets.toml content.
-
----
-
-# Future Improvements
-
-## Add:
-
-* Paystack payment integration
-* WhatsApp notifications
-* SMS alerts
-* Supplier dashboard
-* Delivery tracking
-* Analytics dashboard
-* Customer accounts
-* AI price prediction
-* Bulk order system
-* Warehouse management
-
----
-
-# MVP Goal
-
-DO NOT overbuild.
-
-Your first goal is:
-
-* launch fast
-* test demand
-* onboard suppliers
-* validate pickup operations
-* get first customers
-* refine logistics
-
+        st.warning("Enter correct admin password")
